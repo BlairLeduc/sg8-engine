@@ -37,21 +37,21 @@ pgreq	rmb	1	page switch request
 * 3 -> $1e00-$25ff
 * 4 -> $2600-$2dff
 
-psize	equ	$0800
-page1	equ	$0e00
-page2	equ	page1+psize
-page3	equ	page2+psize
+psize	equ	$0800		size of a page (2K for SG8)
+page1	equ	$0e00	start of graphics memory, page 1 (change irq handler if you change this)
+page2	equ	page1+psize	
+page3	equ	page2+psize	
 page4	equ	page3+psize
 
 
-cyllft	equ	$0203
-cylrgt	equ	$0213
-pstlft	equ	$0224
-pstrgt	equ	$0234
+cyllft	equ	$0203	position of the left cylinder from start of page
+cylrgt	equ	$0213	position of the right cylnder
+pstlft	equ	$0224	postiion of the left piston
+pstrgt	equ	$0234	position of the right piston
 
-ppostop	equ	$0100
-pposmid	equ	$0200
-pposbot	equ	$0300
+ppostop	equ	$0100	offset for the piston in top position
+pposmid	equ	$0200	offset for the piston in middle position
+pposbot	equ	$0300	offset for the piston in bottom position
 
 * set up
 start	orcc	#$50	turn off IRQ and FIRQ
@@ -66,7 +66,7 @@ start	orcc	#$50	turn off IRQ and FIRQ
 	sta	$ff03
 	lda	$ff02	clear flag
 
-	lda	$ff22	semigraphics 8
+	lda	$ff22	set up semigraphics 8
 	anda	#$7
 	sta	$ff22
 	sta	$ffc4
@@ -96,7 +96,7 @@ start	orcc	#$50	turn off IRQ and FIRQ
 
 	andcc	#$ef	enable IRQ (FIRQ disabled)
 
-* clear all pages $0600-$2600
+* clear all pages
 	lda	#$80
 	ldb	#$80
 	ldx	#page1	start of page memory
@@ -144,8 +144,8 @@ clrloop	std	,x++	clear graphics area
 	ldx	#page4+pstrgt+pposmid
 	lbsr	pst	4th page - right
 
-* change display pages and test for X
-again	lbsr	bang	... and bang
+* main loop
+main	lbsr	bang	... and bang
 	lda	#2
 	lbsr	switch
 	lbsr	delay	... and wait
@@ -155,16 +155,22 @@ again	lbsr	bang	... and bang
 	lda	#4
 	lbsr	switch
 	lbsr	delay	... and wait
+	lbsr	isdone	check if done
+	lda	#1
+	lbsr	switch
+	bra	main
+
+
+* check to quit
+isdone	
 	lda	#$fe	check for X key press
 	sta	$ff02
 	lda	$ff00
 	cmpa	#$f7
 	beq	tobasic	if X pressed quit
-	lda	#1
-	lbsr	switch
-	bra	again
+	rts
 
-* go to basic?
+* go to basic
 tobasic	clra
 	sta	$ff22	return to text mode
 	sta	$ffc0
@@ -190,11 +196,11 @@ blit
 	suba	+1,s	  width of bitmap
 	sta	+3,s	increment to next line
 blit010	ldb	+1,s	get width of bitmap
-blit020	lda	,y+
+blit020	lda	,y+	copy row
 	sta	,x+
 	decb
 	bne	blit020
-	tfr	x,d
+	tfr	x,d	move to next row
 	addd	+2,s
 	tfr	d,x
 	dec	,s	decrement number of rows remaining
@@ -232,10 +238,11 @@ count	nop
 	bne	count
 	rts
 
-switch			* switch to page
-	sta	pgreq
+* switch to page
+switch	
+	sta	pgreq	for irq handler
 wait
-	lda	pgreq
+	lda	pgreq	wait until page switch is complete
 	cmpa	#0
 	bne	wait
 	rts
@@ -257,32 +264,34 @@ bng040	deca
 	rts
 
 
-scrint			* Start of screen interrupt handler
-	lda	pgreq
+* Start of screen interrupt handler
+* (update this if you change start of video memory)
+scrint
+	lda	pgreq	bail out early if noting to do
 	cmpa	#0
 	beq	scrrti
-scrb1
+scrpg1
 	cmpa	#1	
-	bne	scrb2
+	bne	scrpg2
 	sta	$ffce
 	sta	$ffcc
 	sta	$ffcb
 	bra	scrrti
-scrb2
+scrpg2
 	cmpa	#2
-	bne	scrb3
+	bne	scrpg3
 	sta	$ffce
 	sta	$ffcd
 	sta	$ffca
 	bra	scrrti
-scrb3
+scrpg3
 	cmpa	#3
-	bne	scrb4
+	bne	scrpg4
 	sta	$ffce
 	sta	$ffcd
 	sta	$ffcb	
 	bra	scrrti
-scrb4
+scrpg4
 	cmpa	#4
 	bne	scrrti
 	sta	$ffcf
@@ -293,6 +302,10 @@ scrrti
 	sta	pgreq
 	lda	$ff02
 	rti
+
+* BITMAPS
+
+* cylinder walls
 cyltbl	
 	fcb	$c5,$cf,$cf,$cf,$cf,$cf,$cf,$cf,$cf,$ca
 	fcb	$c5,$80,$80,$80,$80,$80,$80,$80,$80,$ca
@@ -331,6 +344,7 @@ cyltbl
 	fcb	$c5,$80,$80,$80,$80,$80,$80,$80,$80,$ca
 	fcb	$c5,$80,$80,$80,$80,$80,$80,$80,$80,$ca
 
+* piston
 psttbl	
 	fcb	$cf,$cf,$cf,$cf,$cf,$cf,$cf,$cf
 	fcb	$cf,$cf,$cf,$cf,$cf,$cf,$cf,$cf
@@ -356,6 +370,7 @@ psttbl
 	fcb	$80,$80,$80,$c5,$ca,$80,$80,$80
 	fcb	$80,$80,$80,$c5,$ca,$80,$80,$80
 
+* ignition in piston
 firetbl
 	fcb	$ff,$ff,$9f,$9f,$9f,$9f,$ff,$ff	
 	fcb	$ff,$ff,$ff,$9f,$9f,$ff,$ff,$ff	
