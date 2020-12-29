@@ -24,7 +24,7 @@
         {
             "label": "Run",
             "type": "shell",
-            "command": "/Applications/XRoar.app/Contents/MacOS/xroar -becker -machine-desc cocous -vdg-type 6847t1 -nodos ${fileBasenameNoExtension}.bin",
+            "command": "/Applications/XRoar.app/Contents/MacOS/xroar -becker -machine-desc cocous -vdg-type 6847t1 ${fileBasenameNoExtension}.bin",
             "problemMatcher": [],
             "dependsOn": [ "lwasm" ]
         }

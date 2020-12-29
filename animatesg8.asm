@@ -22,10 +22,14 @@
 
 	nam	animatesg8
 
-	org	$3000
+orig	equ $3000
 
-row	rmb	1
-cycle	rmb	1
+	org	orig
+
+irqvec	equ	$010c
+
+stack	rmb	2	store stack location for basic (must be first here)
+pgreq	rmb	1	page switch request
 
 * pages
 * 1 -> $0e00-$15ff
@@ -33,11 +37,12 @@ cycle	rmb	1
 * 3 -> $1e00-$25ff
 * 4 -> $2600-$2dff
 
+psize	equ	$0800
 page1	equ	$0e00
-page2	equ	$1600
-page3	equ	$1e00
-page4	equ	$2600
-pgend	equ	$2e00
+page2	equ	page1+psize
+page3	equ	page2+psize
+page4	equ	page3+psize
+
 
 cyllft	equ	$0203
 cylrgt	equ	$0213
@@ -49,7 +54,17 @@ pposmid	equ	$0200
 pposbot	equ	$0300
 
 * set up
-start	orcc	#$50	turn off interrupts
+start	orcc	#$50	turn off IRQ and FIRQ
+	sts	stack	save stack for basic
+	lds	orig	set stack to our org
+	lda	#$7e	jmp op code
+	sta	irqvec	set the IRQ vector
+	ldy	#scrint
+	sty	irqvec+1
+	lda	$ff03	read CRB
+	ora	#$05	
+	sta	$ff03
+	lda	$ff02	clear flag
 
 	lda	$ff22	semigraphics 8
 	anda	#$7
@@ -76,12 +91,17 @@ start	orcc	#$50	turn off interrupts
 	ora	#8	get 6-bit sound enable
 	sta	$ff23
 
+	lda	#1
+	sta	pgreq
+
+	andcc	#$ef	enable IRQ (FIRQ disabled)
+
 * clear all pages $0600-$2600
 	lda	#$80
 	ldb	#$80
 	ldx	#page1	start of page memory
 clrloop	std	,x++	clear graphics area
-	cmpx	#pgend	for four pages of memory
+	cmpx	#page1+4*psize
 	blo	clrloop
 
 * draw cylinder in each page of memory
@@ -124,25 +144,24 @@ clrloop	std	,x++	clear graphics area
 	ldx	#page4+pstrgt+pposmid
 	lbsr	pst	4th page - right
 
-
 * change display pages and test for X
 again	lbsr	bang	... and bang
-	sta	$ffca
-	sta	$ffcd	
-	lbsr	delay	show 2nd page and wait
-	sta	$ffcb
-	lbsr	bang	show 3rd page and bang
-	sta	$ffcf
-	sta	$ffcc
-	sta	$ffca
-	lbsr	delay	show 4th page and wait
+	lda	#2
+	lbsr	switch
+	lbsr	delay	... and wait
+	lda	#3
+	lbsr	switch
+	lbsr	bang	... and bang
+	lda	#4
+	lbsr	switch
+	lbsr	delay	... and wait
 	lda	#$fe	check for X key press
 	sta	$ff02
 	lda	$ff00
 	cmpa	#$f7
 	beq	tobasic	if X pressed quit
-	sta	$ffce	
-	sta	$ffcb	show page 1
+	lda	#1
+	lbsr	switch
 	bra	again
 
 * go to basic?
@@ -152,49 +171,56 @@ tobasic	clra
 	sta	$ffc6	show text page
 	sta	$ffcc
 	sta	$ffc9
+	lds	stack
 	andcc	#$af	enable interrupts
+	rts
+
+* blit - copy bitmap onto page
+* Parameters:
+* a - height
+* b - width
+* x - location in screen memory
+* y - bitmap
+blit	
+	leas	-4,s	create space for local variables
+	sta	,s	height of bitmap (rows)
+	stb	+1,s	width of bitmap (cols)
+	clr	+2,s	increment value to move to next row
+	lda	#$20	  width of screen line
+	suba	+1,s	  width of bitmap
+	sta	+3,s	increment to next line
+blit010	ldb	+1,s	get width of bitmap
+blit020	lda	,y+
+	sta	,x+
+	decb
+	bne	blit020
+	tfr	x,d
+	addd	+2,s
+	tfr	d,x
+	dec	,s	decrement number of rows remaining
+	bne	blit010
+	leas	+4,s
 	rts
 
 * draw a cylinder
 cyl	lda	#35
-	sta	row
+	ldb	#10
 	ldy	#cyltbl
-cdown	ldb	#10
-cright	lda	,y+
-	sta	,x+
-	decb
-	bne	cright
-	leax	$16,x
-	dec	row
-	bne	cdown
+	bsr	blit
 	rts
 
 * Draw a piston
 pst	lda	#23
-	sta	row
+	ldb	#8
 	ldy	#psttbl
-pdown	ldb	#8
-pright	lda	,y+
-	sta	,x+
-	decb
-	bne	pright
-	leax	$18,x
-	dec	row
-	bne	pdown
+	bsr	blit
 	rts
 
 * draw ignition
 fire	lda	#8
-	sta	row
+	ldb	#8
 	ldy	#firetbl
-fdown	ldb	#8
-fright	lda	,y+
-	sta	,x+
-	decb
-	bne	fright
-	leax	$18,x
-	dec	row
-	bne	fdown
+	bsr	blit
 	rts
 
 * delay
@@ -204,6 +230,14 @@ count	nop
 	nop
 	leax	-1,x
 	bne	count
+	rts
+
+switch			* switch to page
+	sta	pgreq
+wait
+	lda	pgreq
+	cmpa	#0
+	bne	wait
 	rts
 
 bang	ldy	#$2	count (repeat)
@@ -223,7 +257,42 @@ bng040	deca
 	rts
 
 
-
+scrint			* Start of screen interrupt handler
+	lda	pgreq
+	cmpa	#0
+	beq	scrrti
+scrb1
+	cmpa	#1	
+	bne	scrb2
+	sta	$ffce
+	sta	$ffcc
+	sta	$ffcb
+	bra	scrrti
+scrb2
+	cmpa	#2
+	bne	scrb3
+	sta	$ffce
+	sta	$ffcd
+	sta	$ffca
+	bra	scrrti
+scrb3
+	cmpa	#3
+	bne	scrb4
+	sta	$ffce
+	sta	$ffcd
+	sta	$ffcb	
+	bra	scrrti
+scrb4
+	cmpa	#4
+	bne	scrrti
+	sta	$ffcf
+	sta	$ffcc
+	sta	$ffca
+scrrti
+	clra
+	sta	pgreq
+	lda	$ff02
+	rti
 cyltbl	
 	fcb	$c5,$cf,$cf,$cf,$cf,$cf,$cf,$cf,$cf,$ca
 	fcb	$c5,$80,$80,$80,$80,$80,$80,$80,$80,$ca
@@ -298,3 +367,5 @@ firetbl
 	fcb	$bf,$bf,$ff,$ff,$ff,$ff,$bf,$bf	
 
 	end start
+
+	
