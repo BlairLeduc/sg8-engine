@@ -6,7 +6,7 @@
         {
             "label": "lwasm",
             "type": "shell",
-            "command": "lwasm -b ${relativeFile} -o${fileBasenameNoExtension}.bin || true",
+            "command": "lwasm -9 -b ${relativeFile} -o${fileBasenameNoExtension}.bin || true",
             "windows": {
                 "command": "lwasm -b ${relativeFile} -o${fileBasenameNoExtension}.bin"
             },

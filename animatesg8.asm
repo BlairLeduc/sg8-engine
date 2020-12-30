@@ -21,8 +21,7 @@
 * SOFTWARE.
 
 	nam	animatesg8
-
-orig	equ $3000
+orig	equ	$2000
 
 	org	orig
 
@@ -30,18 +29,26 @@ irqvec	equ	$010c
 
 stack	rmb	2	store stack location for basic (must be first here)
 pgreq	rmb	1	page switch request
+irqfps	rmb	1
+irqovr	rmb	1
+fps	rmb	1
+fpscnt	rmb	1
 
-* pages
-* 1 -> $0e00-$15ff
-* 2 -> $1600-$1dff
-* 3 -> $1e00-$25ff
-* 4 -> $2600-$2dff
+* Memory map
+* <-$0dff     System Memory
+* $0e00-$1dff Video Memory (pages)
+*             1 -> $0e00-$15ff (2K)
+*             2 -> $1600-$1dff (2K)
+* $1e00-$2000 Stack (512 bytes)
+* $2000->     Program and Data
 
-psize	equ	$0800		size of a page (2K for SG8)
-page1	equ	$0e00	start of graphics memory, page 1 (change irq handler if you change this)
+* Valid FPS limits: 60, 30, 20, 15, 12, 10, 8, 7, 6, ...
+fpslmt	equ	20
+fpsrst	equ	(60/fpslmt)
+
+psize	equ	$0800	size of a page (2K for SG8)
+page1	equ	$0e00	start of graphics memory
 page2	equ	page1+psize	
-page3	equ	page2+psize	
-page4	equ	page3+psize
 
 
 cyllft	equ	$0203	position of the left cylinder from start of page
@@ -75,8 +82,8 @@ start	orcc	#$50	turn off IRQ and FIRQ
 			* show page one
 	sta	$ffc7	1 -> $0200
 	sta	$ffc9	1 -> $0400
-	sta	$ffcb	1 -> $0800
-	sta	$ffcc	0 -> $1000
+	sta	$ffcb	1 -> $0800 (page2 = 0)
+	sta	$ffcc	0 -> $1000 (page2 = 1)
 	sta	$ffce	0 -> $2000
 	sta	$ffd0	0 -> $4000
 	sta	$ffd2	0 -> $8000
@@ -94,72 +101,149 @@ start	orcc	#$50	turn off IRQ and FIRQ
 	lda	#1
 	sta	pgreq
 
+	clr	irqclk	show time since start
+	clr	irqfps	show fps
+	clr	fps
+	lda	#fpsrst
+	sta	fpscnt
+
 	andcc	#$ef	enable IRQ (FIRQ disabled)
 
 * clear all pages
-	lda	#$80
-	ldb	#$80
+	ldd	#$8080
 	ldx	#page1	start of page memory
 clrloop	std	,x++	clear graphics area
-	cmpx	#page1+4*psize
+	cmpx	#page1+2*psize
 	blo	clrloop
 
-* draw cylinder in each page of memory
-	ldx	#page1+cyllft
-	lbsr	cyl	1st page - left
-	ldx	#page1+cylrgt
-	lbsr	cyl	1st page - right
-	ldx	#page2+cyllft
-	lbsr	cyl	2nd page - left
-	ldx	#page2+cylrgt
-	lbsr	cyl	2nd page - right
-	ldx	#page3+cyllft
-	lbsr	cyl	3rd page - left
-	ldx	#page3+cylrgt
-	lbsr	cyl	3rd page - right
-	ldx	#page4+cyllft
-	lbsr	cyl	4th page - left
-	ldx	#page4+cylrgt
-	lbsr	cyl	4th page - right
-
-* draw piston in each page of memory
-	ldx	#page1+pstlft+pposbot
-	lbsr	pst	1st page - left
-	ldx	#page1+pstrgt+ppostop
-	lbsr	pst	1st page - right
-	ldx	#page1+pstrgt
-	lbsr	fire	1st page - right
-	ldx	#page2+pstlft+pposmid
-	lbsr	pst	2nd page - left
-	ldx	#page2+pstrgt+pposmid
-	lbsr	pst	2nd page - right
-	ldx	#page3+pstlft+ppostop
-	lbsr	pst	3rd page - left
-	ldx	#page3+pstlft
-	lbsr	fire	3rd page - left
-	ldx	#page3+pstrgt+pposbot
-	lbsr	pst	3rd page - right
-	ldx	#page4+pstlft+pposmid
-	lbsr	pst	4th page - left
-	ldx	#page4+pstrgt+pposmid
-	lbsr	pst	4th page - right
-
+	clra
+	clrb
+	sta	cycle
+	sta	sound
+	std	clock
+	std	clock+2
+	ldx	#page1
+	stx	page
 * main loop
-main	lbsr	bang	... and bang
-	lda	#2
-	lbsr	switch
-	lbsr	delay	... and wait
-	lda	#3
-	lbsr	switch
-	lbsr	bang	... and bang
-	lda	#4
-	lbsr	switch
-	lbsr	delay	... and wait
-	lbsr	isdone	check if done
+main
 	lda	#1
-	lbsr	switch
-	bra	main
+	sta	irqovr
 
+	* run sound for shown page
+sndeffects
+	lda	sound
+	beq	draw
+	lbsr	bang	... and bang for shown page
+
+	* draw page content on hidden page
+draw
+drwclk
+	lda	#$60	purple
+	ldb	#2	two pairs of digits
+	ldx	page
+	leax	24,x	top right
+	ldu	#clock
+	lbsr	prtbcd
+
+drwcyl
+	ldx	page
+	leax	cyllft,x
+	lbsr	cyl	draw left cylinder
+	ldx	page
+	leax	cylrgt,x
+	lbsr	cyl	draw right cylinder
+cycrgt
+	lda	cycle
+	cmpa	#0
+	bne	cyclft
+	ldx	page
+	leax	pstlft+pposbot,x
+	lbsr	pst	draw left piston
+	ldx	page
+	leax	pstrgt+ppostop,x
+	lbsr	pst	draw right piston
+	ldx	page
+	leax	pstrgt,x
+	lbsr	fire	draw right ignition
+	lda	#1	bang
+	sta	sound
+	bra	cycnxt
+cyclft
+	lda	cycle
+	cmpa	#2
+	bne	cycmid
+	ldx	page
+	leax	pstlft+ppostop,x
+	lbsr	pst	draw left piston
+	ldx	page
+	leax	pstrgt+pposbot,x
+	lbsr	pst	draw right piston
+	ldx	page
+	leax	pstlft,x
+	lbsr	fire	draw left ignition
+	lda	#1	bang
+	sta	sound
+	bra	cycnxt
+cycmid
+	ldx	page
+	leax	pstlft+pposmid,x
+	lbsr	pst	draw left piston
+	ldx	page
+	leax	pstrgt+pposmid,x
+	lbsr	pst	draw right piston
+	clr	sound	no bang
+cycnxt	lda	cycle
+	inca
+	sta	cycle
+	cmpa	#4
+	blo	mainend
+	clr	cycle
+mainend
+	lbsr	isdone	check if we are to quit
+
+drwfps	lda	irqovr
+	bne	fps010
+	lda	#$30	red
+	bne	fps020
+fps010	lda	#$00	green
+fps020	ldb	#1	two pairs of digits
+	ldx	page
+	leax	psize-(5*32)-18,x	bottom middle
+	ldu	#fps
+	lbsr	prtbcd
+
+
+	* switch to other page for double buffering
+dblbuf
+	ldd	#page1
+	cmpd	page
+	beq	mainp2
+mainp1	lda	#2
+	lbsr	switch	show page 2
+	ldx	#page1
+	stx	page	start drawing on page 1
+	lda	#$80
+	ldb	#$80
+clrp1	std	,x++	clear page 1
+	cmpx	#page1+psize
+	blo	clrp1	
+	lbra	main
+mainp2	lda	#1	show page one
+	lbsr	switch
+	ldx	#page2	start drawing on page 2
+	stx	page
+	lda	#$80
+	ldb	#$80
+clrp2	std	,x++	clear page 2
+	cmpx	#page2+psize
+	blo	clrp2
+	lbra	main
+
+fpsskp	rmb	1
+cycle	rmb	1
+page	rmb	2
+sound	rmb	1
+clock	rmb	2
 
 * check to quit
 isdone	
@@ -182,125 +266,214 @@ tobasic	clra
 	rts
 
 * blit - copy bitmap onto page
-* Parameters:
 * a - height
 * b - width
 * x - location in screen memory
-* y - bitmap
+* u - bitmap
 blit	
-	leas	-4,s	create space for local variables
-	sta	,s	height of bitmap (rows)
-	stb	+1,s	width of bitmap (cols)
-	clr	+2,s	increment value to move to next row
-	lda	#$20	  width of screen line
-	suba	+1,s	  width of bitmap
-	sta	+3,s	increment to next line
-blit010	ldb	+1,s	get width of bitmap
-blit020	lda	,y+	copy row
-	sta	,x+
+	sta	bltrows	height of bitmap (rows)
+	stb	bltcols	width of bitmap (cols)
+	clra
+	ldb	#$20	width of screen line
+	subb	bltcols	width of bitmap
+	stb	bltinc	number of bytes to move to next row
+blit010	ldb	bltcols	get width of bitmap
+	lsrb
+blit020	ldy	,u++	copy row
+	sty	,x++
 	decb
 	bne	blit020
-	tfr	x,d	move to next row
-	addd	+2,s
-	tfr	d,x
-	dec	,s	decrement number of rows remaining
+	lda	bltinc
+	leax	a,x	move to next row
+	dec	bltrows	decrement number of rows remaining
 	bne	blit010
-	leas	+4,s
 	rts
+bltrows	rmb	1
+bltcols	rmb	1
+bltinc	rmb	2
 
 * draw a cylinder
-cyl	lda	#35
-	ldb	#10
-	ldy	#cyltbl
+cyl	lda	#35	height
+	ldb	#10	width
+	ldu	#cyltbl
 	bsr	blit
 	rts
 
 * Draw a piston
-pst	lda	#23
-	ldb	#8
-	ldy	#psttbl
+pst	lda	#23	height
+	ldb	#8	width
+	ldu	#psttbl
 	bsr	blit
 	rts
 
 * draw ignition
-fire	lda	#8
-	ldb	#8
-	ldy	#firetbl
+fire	lda	#8	height
+	ldb	#8	width
+	ldu	#firetbl
 	bsr	blit
 	rts
 
 * delay
-delay	ldx	#$2000
+delay	ldu	#$2000
 count	nop
 	nop
 	nop
-	leax	-1,x
+	leau	-1,u
 	bne	count
 	rts
 
-* switch to page
+* switch - switch to page and wait
+* a - page to show
 switch	
 	sta	pgreq	for irq handler
 wait
 	lda	pgreq	wait until page switch is complete
-	cmpa	#0
 	bne	wait
 	rts
 
-bang	ldy	#$2	count (repeat)
-bng010	ldx	#$8000	start address for sound data
+bang	ldx	#$8000	start address for sound data
 bng020	lda	,x+	
 	anda	#$fc	reset 2 LS bits
 	sta	$ff20	output
 	bsr	bng030	delay
-	cmpx	#$8060
+	cmpx	#$8010
 	bne	bng020	loop if not end
-	leay	-1,y	dec count
-	bne	bng010	repeat if not done
 	rts
 bng030	lda	#$80	delay
 bng040	deca
 	bne	bng040
 	rts
 
+* bcdadd - add a single byte value to a bcd number
+* b - size of bcd number
+* x - points to value to add (BCD)
+* u - points to value (BCD) LSB
+bcdadd
+	tfr	u,y	store result in value
+	andcc	#$fe	reset carry
+bcd010	
+	lda	,-x
+	adca	,-y	add to value
+	daa		
+	sta	,-u	store result
+	decb		dec interation count
+	bne	bcd010	go if not done
+	rts
+
+
+* prtbcd - prints a BCD number to the screen
+* a - colour (0-7) in high nibble
+* b - number of digit pairs
+* x - position to print
+* u - points to value (BCD)
+prtbcd
+	stb	prtcols
+	stx	prtloc
+	anda	#$70	here in case I mess up the colour
+	sta	prtclr
+	lda	#2	pairs of digits to write
+	lda	#5	height of a digit
+	sta	prtrows
+	
+prt010	ldy	#digits	lookup table
+	lda	,u	get number to draw
+	anda	#$f0
+	lsra
+	lsra
+	lsra
+	leay	a,y	
+	ldy	,y	get location of digit
+	bsr	prtnum
+	ldx	prtloc
+	leax	2,x	move to next location to draw
+	stx	prtloc
+	lda	#5	reset number of rows to draw
+	sta	prtrows
+	ldy	#digits	lookup table
+	lda	,u+	get number to draw
+	anda	#$0f
+	lsla
+	leay	a,y	
+	ldy	,y	get location of digit
+	bsr	prtnum
+	ldx	prtloc
+	leax	2,x	move to next location to draw
+	stx	prtloc
+	lda	#5	reset number of rows to draw
+	sta	prtrows
+	dec	prtcols	are we done drawing numbers?
+	bne	prt010
+	rts
+prtnum	ldd	,y++	get digit
+	ora	prtclr	color it
+	orb	prtclr
+	std	,x
+	leax	$20,x	move to next row
+	dec	prtrows
+	bne	prtnum
+	rts
+prtloc	rmb	2
+prtclr	rmb	1
+prtrows	rmb	1
+prtcols rmb	1
+
 
 * Start of screen interrupt handler
 * (update this if you change start of video memory)
+irqclk	rmb	1
+one	fcb	0,1
 scrint
-	lda	pgreq	bail out early if noting to do
+scrclk	
+	inc	irqclk	60 irqs per sec
+	lda	#60
+	cmpa	irqclk
+	bhi	scrnxt
+onceasec
+	* incrememt clock
+	ldb	#2	two byte BCD
+	ldx	#one+2	add a second to the clock
+	ldu	#clock+2
+	lbsr	bcdadd
+	
+	* reset fps counter
+	lda	irqfps
+	sta	fps	store to draw
+	clr	irqfps	clear once a sec
+
+	* reset counter to count to next second
+	clr	irqclk
+
+scrnxt
+	lda	fpscnt
+	deca
+	sta	fpscnt
 	cmpa	#0
+	bgt	scrrti
+scrpg0	
+	clr	irqovr	mark if we took too long to draw
+	lda	pgreq
 	beq	scrrti
+	ldb	#fpsrst
+	stb	fpscnt
 scrpg1
 	cmpa	#1	
-	bne	scrpg2
-	sta	$ffce
-	sta	$ffcc
-	sta	$ffcb
-	bra	scrrti
+	bne	scrpg2	base offset $0600
+	sta	$ffcc	-
+	sta	$ffcb	+$0800 = $0e00
+	bra	scrpgr
 scrpg2
 	cmpa	#2
-	bne	scrpg3
-	sta	$ffce
-	sta	$ffcd
-	sta	$ffca
-	bra	scrrti
-scrpg3
-	cmpa	#3
-	bne	scrpg4
-	sta	$ffce
-	sta	$ffcd
-	sta	$ffcb	
-	bra	scrrti
-scrpg4
-	cmpa	#4
-	bne	scrrti
-	sta	$ffcf
-	sta	$ffcc
-	sta	$ffca
+	bne	scrpgr	base offset $0600
+	sta	$ffca	-
+	sta	$ffcd	+$1000 = $1600
+scrpgr
+	lda	irqfps	track fps
+	inca
+	daa
+	sta	irqfps
+	clr	pgreq	mark switch was made
 scrrti
-	clra
-	sta	pgreq
-	lda	$ff02
+	lda	$ff02	reset irq
 	rti
 
 * BITMAPS
@@ -380,6 +553,70 @@ firetbl
 	fcb	$ff,$ff,$ff,$ff,$ff,$ff,$ff,$ff	
 	fcb	$bf,$ff,$ff,$ff,$ff,$ff,$ff,$bf	
 	fcb	$bf,$bf,$ff,$ff,$ff,$ff,$bf,$bf	
+
+digits	* number bitmaps
+	fdb	digit0,digit1,digit2,digit3,digit4
+	fdb	digit5,digit6,digit7,digit8,digit9
+
+digit0	fcb	$8f,$8a XXXXXX..
+	fcb	$8a,$8a XX..XX..
+	fcb	$8a,$8a XX..XX..
+	fcb	$8a,$8a XX..XX..
+	fcb	$8f,$8a XXXXXX..
+
+digit1	fcb	$85,$80 ..XX....
+	fcb	$85,$80 ..XX....
+	fcb	$85,$80 ..XX....
+	fcb	$85,$80 ..XX....
+	fcb	$85,$80 ..XX....
+
+digit2	fcb	$8f,$8a XXXXXX..
+	fcb	$80,$8a ....XX..
+	fcb	$8f,$8a XXXXXX..
+	fcb	$8a,$80 XX......
+	fcb	$8f,$8a XXXXXX..
+
+digit3	fcb	$8f,$8a XXXXXX..
+	fcb	$80,$8a ....XX..
+	fcb	$85,$8a ..XXXX..
+	fcb	$80,$8a ....XX..
+	fcb	$8f,$8a XXXXXX..
+
+digit4	fcb	$8a,$8a XX..XX..
+	fcb	$8a,$8a XX..XX..
+	fcb	$8f,$8a XXXXXX..
+	fcb	$80,$8a ....XX..
+	fcb	$80,$8a ....XX..
+
+digit5	fcb	$8f,$8a XXXXXX..
+	fcb	$8a,$80 XX....
+	fcb	$8f,$8a XXXXXX..
+	fcb	$80,$8a ....XX..
+	fcb	$8f,$8a XXXXXX..
+
+digit6	fcb	$8f,$8a XXXXXX..
+	fcb	$8a,$80 XX......
+	fcb	$8f,$8a XXXXXX..
+	fcb	$8a,$8a XX..XX..
+	fcb	$8f,$8a XXXXXX..
+
+digit7	fcb	$8f,$8a XXXXXX..
+	fcb	$80,$8a ....XX..
+	fcb	$80,$8a ....XX..
+	fcb	$80,$8a ....XX..
+	fcb	$80,$8a ....XX..
+
+digit8	fcb	$8f,$8a XXXXXX..
+	fcb	$8a,$8a XX..XX..
+	fcb	$8f,$8a XXXXXX..
+	fcb	$8a,$8a XX..XX..
+	fcb	$8f,$8a XXXXXX..
+
+digit9	fcb	$8f,$8a XXXXXX..
+	fcb	$8a,$8a XX..XX..
+	fcb	$8f,$8a XXXXXX..
+	fcb	$80,$8a ....XX..
+	fcb	$80,$8a ....XX..
 
 	end start
 
