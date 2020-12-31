@@ -53,7 +53,8 @@ irqVector	equ	$010c
 		org	$2000
 
 		* Interrup handler variables
-tick		rmb	1
+ticks		rmb	2
+secondKeeping	rmb	1
 pageRequest	rmb	1		Page switch request
 frameCount	rmb	1
 isInTime	rmb	1
@@ -166,12 +167,15 @@ start
 		* Initialise page request to None
 		clr	pageRequest
 		* Initialise clock
-		clr	tick
+		clr	secondKeeping
 		* Initialise FPS counter
 		clr	frameCount
 		clr	currentFps
 		lda	#fpsLimit
 		sta	fpsLimitCount
+		clra
+		clrb
+		std	ticks
 		* Enable IRQ (FIRQ disabled)
 		andcc	#$ef
 		* Clear all pages to black
@@ -212,7 +216,7 @@ drawClock
 		ldb	#2		Two pairs of digits
 		ldx	page
 		leax	clockPos,x
-		ldu	#clock
+		ldy	#clock
 		lbsr	printBcd
 
 drawCycle
@@ -303,7 +307,7 @@ drawFps@Counter
 		ldb	#1		One pair of digits
 		ldx	page
 		leax	fpsPos,x
-		ldu	#currentFps
+		ldy	#currentFps
 		lbsr	printBcd
 
 doubleBuffer
@@ -432,10 +436,11 @@ printBcd	* Prints a BCD number to the screen
 		* a - colour (0-7) in high nibble
 		* b - number of digit pairs
 		* x - position to print
-		* u - points to value (BCD)
+		* y - points to value (BCD)
 		stb	blitCols
 		stx	drawLocation
 		sta	drawColour
+		tfr	y,u		
 loop@
 		* Draw most-significant nibble
 		ldy	#digitLookup
@@ -488,10 +493,14 @@ blitDigit	* Blit a single digit
 *******************************************************************************
 * IRQ interrupt handler
 interrupt	* IRQ interrupt handler
+		ldd	ticks
+		addd	#1
+		std	ticks
+
 		* Check if we are on a second boundary
-		inc	tick		60 IRQs per sec (every 16.7ms)
+		inc	secondKeeping		60 IRQs per sec (every 16.7ms)
 		lda	#60
-		cmpa	tick
+		cmpa	secondKeeping
 		bhi	everyInterrupt
 everySecond
 		* Incrememt clock
@@ -506,7 +515,7 @@ everySecond
 		clr	frameCount	Clear counter for next measurement
 
 		* Reset counter to count to next second
-		clr	tick
+		clr	secondKeeping
 
 everyInterrupt
 		* Limit FPS to requested value
