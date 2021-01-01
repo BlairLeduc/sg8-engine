@@ -70,6 +70,9 @@ drawColour	rmb	1
 
 		* Other variables
 randomState	rmb	1		Pseudo-random number state
+randomNumber	rmb	1
+randomCount	rmb	1
+
 
 		* Game variables
 cycle		rmb	1
@@ -83,9 +86,10 @@ clock		rmb	2
 one		fcb	0,1		Value of one, for incrementing BCD values
 taps		fcb	$b4		Pseudo-random number coefficients for LFSR
 
+
 ***************************************************************************************
 * FPS constants
-fpsTarget	equ	15		Valid FPS limits: 60, 30, 20, 15, 12, 10, ...
+fpsTarget	equ	20		Valid FPS limits: 60, 30, 20, 15, 12, 10, ...
 fpsLimit	equ	(60/fpsTarget)
 
 
@@ -103,17 +107,18 @@ orange		equ	$70
 
 ***************************************************************************************
 * Object screen positon constants
-cylinderLeftPos	equ	$0203		Left cylinder
-cylinderRightPos equ	$0213		Right cylnder
-pistonLeftPos	equ	$0224		Left piston
-pistonRightPos	equ	$0234		Right piston
+cylinderLeftPos	equ	$01e3		Left cylinder
+cylinderRightPos equ	$01f3		Right cylnder
+pistonLeftPos	equ	$0204		Left piston
+pistonRightPos	equ	$0214		Right piston
 pistonTopOff	equ	$0100		Offset for the piston at top
 pistonMidOff	equ	$0200		Offset for the piston at middle
 pistonBotOff	equ	$0300		Offset for the piston at bottom
 
-clockPos	equ	$18		Clock
-fpsPos		equ	psize-(5*32)-18	FPS counter
-lightPos	equ	psize-(5*32)	Light
+titlePos	equ	32+1
+clockPos	equ	64-(4*2)-1	Clock
+fpsPos		equ	psize-(6*32)-18	FPS counter
+lightPos	equ	psize-(6*32)+1	Light
 
 
 ***************************************************************************************
@@ -124,8 +129,16 @@ bang		equ	$01
 
 
 ***************************************************************************************
-* Start of game
+* Program area
 		org	$2100
+
+***************************************************************************************
+* Game text
+engine		fcn	'Engine|'
+
+
+***************************************************************************************
+* Start of game
 start	
 		* Set up
 		orcc	#$50		Turn off IRQ and FIRQ
@@ -182,8 +195,6 @@ start
 		clra
 		clrb
 		std	ticks
-		* Enable IRQ (FIRQ disabled)
-		andcc	#$ef
 		* Clear all pages to black
 		ldd	#$8080		Black in sg8
 		ldx	#page1		Start of graphics memory
@@ -198,6 +209,8 @@ loop@		std	,x++
 		std	clock
 		ldx	#page1
 		stx	page
+		* Enable IRQ (FIRQ disabled)
+		andcc	#$ef
 
 
 ***************************************************************************************
@@ -216,6 +229,14 @@ soundEffects
 draw
 		* Draw page content on hidden page
 		clr	sound		Initialise sound
+
+drawTitle
+		* Draw the title of our demo
+		lda	#cyan
+		ldx	page
+		ldy	#engine
+		lbsr	drawText
+
 drawClock
 		* Draw clock
 		lda	#magenta
@@ -226,9 +247,10 @@ drawClock
 		lbsr	printBcd
 
 drawRandomLight
-		lbsr	getRand
-		cmpa	#$80
-		bls	drawCycle
+		* Draw a light randomly
+		lbsr	getRandomBit
+		anda	#$01
+		bne	drawCycle
 		ldx	page
 		leax	lightPos,x
 		lbsr	blitLight
@@ -356,7 +378,6 @@ loop@1		std	,x++		Clear page 2
 
 *******************************************************************************
 * Drawing routines
-
 blitCylinder	* Draw a cylinder
 		* x - location to draw
 		lda	#35		Height
@@ -390,8 +411,7 @@ blitLight	* Draw ignition
 		rts
 
 *******************************************************************************
-* Helper routines
-
+* Blit routines
 blit		* Copy bitmap onto page
 		* a - height
 		* b - width
@@ -415,13 +435,74 @@ loop@2		ldu	,y++		Copy row
 		bne	loop@1
 		rts
 
-showPage	* switch to page and wait for page to be visible
+
+blitDigit	* Blit a single digit
+		* x - points to location in screen memory 
+		* y - points to digit bitmap
+		ldd	,y++		Get digit
+		ora	drawColour	Colour it
+		orb	drawColour
+		std	,x
+		leax	$20,x		Move to next row
+		dec	blitRows
+		bne	blitDigit
+		rts
+
+blitChar	* Blit a single character
+		* x - points to location in screen memory
+		* y - points to character bitmap
+		ldd	,y++		Get 2/3 of character
+		ora	drawColour	Colour it
+		orb	drawColour
+		std	,x++
+		lda	,y+		Get remaining 1/3
+		ora	drawColour
+		sta	,x
+		leax	$1e,x		Move to next row
+		dec	blitRows
+		bne	blitChar
+		rts
+
+
+*******************************************************************************
+* Helper routines
+showPage	* Switch to page and wait for page to be visible
 		* a - page to show
 		sta	pageRequest	For irq handler
 loop@		lda	pageRequest	Wait until page switch is complete
 		bne	loop@		Request is serviced when pageReq reset to 0
 		rts
 
+
+drawText	* Draw a zero terminated string
+		* a - colour (0-7) in high nibble
+		* x - position to print
+		* y - points to text string
+		stx	drawLocation
+		sta	drawColour
+		tfr	y,u
+		lda	,u+		Get first character to draw
+loop@		ldy	#charLookup
+		anda	#$1f		Mask for lookup table
+		lsla			Muliply by 2 to index into 16-bit table
+		leay	a,y		Index to lookup digit bitmap
+		ldy	,y		Get location of digit
+		lda	#7		Height of a digit
+		sta	blitRows
+		lbsr	blitChar
+		* Move to next location to draw
+		ldx	drawLocation
+		leax	3,x
+		stx	drawLocation
+		* Are we done drawing numbers?
+		lda	,u+		Get next character to draw
+		bne	loop@
+		rts
+
+
+
+*******************************************************************************
+* Sound generation routines
 soundBang	* Creates a bang sound for ignition
 		* No parameters
 		ldx	#$8000		Start address for sound data
@@ -438,6 +519,9 @@ loop@2		deca
 		bne	loop@2
 		rts
 
+
+*******************************************************************************
+* BCD routines
 addBcd		* Add two BCD numbers, result to address in y
 		* b - size of bcd number
 		* x - points to value to add (BCD)
@@ -497,34 +581,40 @@ loop@
 		bne	loop@
 		rts
 
-blitDigit	* Blit a single digit
-		* x - points to location in screen memory 
-		* y - points to digit bitmap
-		ldd	,y++		Get digit
-		ora	drawColour	Colour it
-		orb	drawColour
-		std	,x
-		leax	$20,x		Move to next row
-		dec	blitRows
-		bne	blitDigit
-		rts
 
+*******************************************************************************
+* Peusdo-random number routines
 seedRand	* Seed random number
 		* No parameters
 		lda	ticks+1
-		sta	randomState
+		bne	seedRand@1
+		inca			Make sure not to seed with zero
+seedRand@1	sta	randomState
 		rts
-getRand		* Get random number (a - random bit on return)
+getRandomBit	* Get a random bit (a - random bit on return)
 		* No parameters
 		* Uses the Galois form to express the LFSR
 		lda	randomState
 		tfr	a,b
 		lsrb
-		bita	#$01
-		beq	getRand@1
+		anda	#$01		Get output
+		beq	getRandomBit@1
 		eorb	taps
-getRand@1	stb	randomState
-		rts	
+getRandomBit@1	stb	randomState
+		rts
+
+getRandomBits	* Get random value (result stored in randomNumber)
+		* a - number of bits
+		sta	randomCount
+		clr	randomNumber
+getRandomBits@1	lbsr	getRandomBit
+		ora	randomNumber
+		sta	randomNumber
+		dec	randomCount
+		beq	getRandomBits@2
+		lsl	randomNumber
+		bra	getRandomBits@1
+getRandomBits@2	rts
 
 
 *******************************************************************************
@@ -747,5 +837,276 @@ digit9	fcb	$8f,$8a XXXXXX..
 	fcb	$80,$8a ....XX..
 	fcb	$80,$8a ....XX..
 
-	end start
+* Character Bitmaps
+charLookup
+		fdb	char_cpy,char_A,char_B,char_C
+		fdb	char_D,char_E,char_F,char_G
+		fdb	char_H,char_I,char_J,char_K
+		fdb	char_L,char_M,char_N,char_O
+		fdb	char_P,char_Q,char_R,char_S
+		fdb	char_T,char_U,char_V,char_W
+		fdb	char_X,char_Y,char_Z,char_mns
+		fdb	char_exc,char_qst,char_asp,char_spc
+
+char_cpy	fcb	$85,$8f,$8a	..XXXXXXXX..
+		fcb	$8a,$80,$85	XX........XX
+		fcb	$8a,$8f,$85	XX..XXXX..XX
+		fcb	$8a,$8a,$85	XX..XX....XX
+		fcb	$8a,$8f,$85	XX..XXXX..XX
+		fcb	$8a,$80,$85	XX........XX
+		fcb	$85,$8f,$8a	..XXXXXXXX..
+
+char_A		fcb	$80,$8a,$80	....XX......
+		fcb	$85,$85,$80	..XX..XX....
+		fcb	$8a,$80,$8a	XX......XX..
+		fcb	$8a,$80,$8a	XX......XX..
+		fcb	$8f,$8f,$8a	XXXXXXXXXX..
+		fcb	$8a,$80,$8a	XX......XX..
+		fcb	$8a,$80,$8a	XX......XX..
+
+char_B		fcb	$8f,$8f,$80	XXXXXXXX....
+		fcb	$8a,$80,$8a	XX......XX..
+		fcb	$8a,$80,$8a	XX......XX..
+		fcb	$8f,$8f,$80	XXXXXXXX....
+		fcb	$8a,$80,$8a	XX......XX..
+		fcb	$8a,$80,$8a	XX......XX..
+		fcb	$8f,$8f,$80	XXXXXXXX....
+
+char_C		fcb	$85,$8f,$80	..XXXXXX....
+		fcb	$8a,$80,$8a	XX......XX..
+		fcb	$8a,$80,$80	XX..........
+		fcb	$8a,$80,$80	XX..........
+		fcb	$8a,$80,$80	XX..........
+		fcb	$8a,$80,$8a	XX......XX..
+		fcb	$85,$8f,$80	..XXXXXX....
+
+char_D		fcb	$8f,$8f,$80	XXXXXXXX....
+		fcb	$8a,$80,$8a	XX......XX..
+		fcb	$8a,$80,$8a	XX......XX..
+		fcb	$8a,$80,$8a	XX......XX..
+		fcb	$8a,$80,$8a	XX......XX..
+		fcb	$8a,$80,$8a	XX......XX..
+		fcb	$8f,$8f,$80	XXXXXXXX....
+
+char_E		fcb	$8f,$8f,$8a	XXXXXXXXXX..
+		fcb	$8a,$80,$80	XX..........
+		fcb	$8a,$80,$80	XX..........
+		fcb	$8f,$8a,$80	XXXXXX......
+		fcb	$8a,$80,$80	XX..........
+		fcb	$8a,$80,$80	XX..........
+		fcb	$8f,$8f,$8a	XXXXXXXXXX..
+
+char_F		fcb	$8f,$8f,$8a	XXXXXXXXXX..
+		fcb	$8a,$80,$80	XX..........
+		fcb	$8a,$80,$80	XX..........
+		fcb	$8f,$8a,$80	XXXXXX......
+		fcb	$8a,$80,$80	XX..........
+		fcb	$8a,$80,$80	XX..........
+		fcb	$8a,$80,$80	XX..........
+
+char_G		fcb	$85,$8f,$80	..XXXXXX....
+		fcb	$8a,$80,$8a	XX......XX..
+		fcb	$8a,$80,$80	XX..........
+		fcb	$8a,$85,$8a	XX....XXXX..
+		fcb	$8a,$80,$8a	XX......XX..
+		fcb	$8a,$80,$8a	XX......XX..
+		fcb	$85,$8f,$80	..XXXXXX....
+
+char_H		fcb	$8a,$80,$8a	XX......XX..
+		fcb	$8a,$80,$8a	XX......XX..
+		fcb	$8a,$80,$8a	XX......XX..
+		fcb	$8f,$8f,$8a	XXXXXXXXXX..
+		fcb	$8a,$80,$8a	XX......XX..
+		fcb	$8a,$80,$8a	XX......XX..
+		fcb	$8a,$80,$8a	XX......XX..
+
+char_I		fcb	$85,$8f,$80	..XXXXXX....
+		fcb	$80,$8a,$80	....XX......
+		fcb	$80,$8a,$80	....XX......
+		fcb	$80,$8a,$80	....XX......
+		fcb	$80,$8a,$80	....XX......
+		fcb	$80,$8a,$80	....XX......
+		fcb	$85,$8f,$80	..XXXXXX....
+
+char_J		fcb	$80,$80,$8a	........XX..
+		fcb	$80,$80,$8a	........XX..
+		fcb	$80,$80,$8a	........XX..
+		fcb	$80,$80,$8a	........XX..
+		fcb	$80,$80,$8a	........XX..
+		fcb	$8a,$80,$8a	XX......XX..
+		fcb	$85,$8f,$80	..XXXXXX....
+
+char_K		fcb	$8a,$80,$8a	XX......XX..
+		fcb	$8a,$85,$80	XX....XX....
+		fcb	$8a,$8a,$80	XX..XX......
+		fcb	$8f,$80,$80	XXXX........
+		fcb	$8a,$8a,$80	XX..XX......
+		fcb	$8a,$85,$80	XX....XX....
+		fcb	$8a,$80,$8a	XX......XX..
+
+char_L		fcb	$8a,$80,$80	XX..........
+		fcb	$8a,$80,$80	XX..........
+		fcb	$8a,$80,$80	XX..........
+		fcb	$8a,$80,$80	XX..........
+		fcb	$8a,$80,$80	XX..........
+		fcb	$8a,$80,$80	XX..........
+		fcb	$8f,$8f,$80	XXXXXXXXXX..
+
+char_M		fcb	$8a,$80,$8a	XX......XX..
+		fcb	$8f,$85,$8a	XXXX..XXXX..
+		fcb	$8a,$8a,$8a	XX..XX..XX..
+		fcb	$8a,$8a,$8a	XX..XX..XX..
+		fcb	$8a,$80,$8a	XX......XX..
+		fcb	$8a,$80,$8a	XX......XX..
+		fcb	$8a,$80,$8a	XX......XX..
+
+char_N		fcb	$8a,$80,$8a	XX......XX..
+		fcb	$8a,$80,$8a	XX......XX..
+		fcb	$8f,$80,$8a	XXXX....XX..
+		fcb	$8a,$8a,$8a	XX..XX..XX..
+		fcb	$8a,$85,$8a	XX....XXXX..
+		fcb	$8a,$80,$8a	XX......XX..
+		fcb	$8a,$80,$8a	XX......XX..
+
+char_O		fcb	$85,$8f,$80	..XXXXXX....
+		fcb	$8a,$80,$8a	XX......XX..
+		fcb	$8a,$80,$8a	XX......XX..
+		fcb	$8a,$80,$8a	XX......XX..
+		fcb	$8a,$80,$8a	XX......XX..
+		fcb	$8a,$80,$8a	XX......XX..
+		fcb	$85,$8f,$80	..XXXXXX....
+
+char_P		fcb	$8f,$8f,$80	XXXXXXXX....
+		fcb	$8a,$80,$8a	XX......XX..
+		fcb	$8a,$80,$8a	XX......XX..
+		fcb	$8f,$8f,$80	XXXXXXXX....
+		fcb	$8a,$80,$80	XX..........
+		fcb	$8a,$80,$80	XX..........
+		fcb	$8a,$80,$80	XX..........
+
+char_Q		fcb	$85,$8f,$80	..XXXXXX....
+		fcb	$8a,$80,$8a	XX......XX..
+		fcb	$8a,$80,$8a	XX......XX..
+		fcb	$8a,$80,$8a	XX......XX..
+		fcb	$8a,$8a,$8a	XX..XX..XX..
+		fcb	$8a,$85,$80	XX....XX....
+		fcb	$85,$8a,$8a	..XXXX..XX..
+
+char_R		fcb	$8f,$8f,$80	XXXXXXXX....
+		fcb	$8a,$80,$8a	XX......XX..
+		fcb	$8a,$80,$8a	XX......XX..
+		fcb	$8f,$8f,$80	XXXXXXXX....
+		fcb	$8a,$8a,$80	XX..XX......
+		fcb	$8a,$85,$80	XX....XX....
+		fcb	$8a,$80,$8a	XX......XX..
+
+char_S		fcb	$85,$8f,$80	..XXXXXX....
+		fcb	$8a,$80,$8a	XX......XX..
+		fcb	$8a,$80,$80	xx..........
+		fcb	$85,$8f,$80	..XXXXXX....
+		fcb	$80,$80,$8a	........XX..
+		fcb	$8a,$80,$8a	XX......XX..
+		fcb	$85,$8f,$80	..XXXXXX....
+
+char_T		fcb	$8f,$8f,$8a	XXXXXXXXXX..
+		fcb	$80,$8a,$80	....XX......
+		fcb	$80,$8a,$80	....XX......
+		fcb	$80,$8a,$80	....XX......
+		fcb	$80,$8a,$80	....XX......
+		fcb	$80,$8a,$80	....XX......
+		fcb	$80,$8a,$80	....XX......
+
+char_U		fcb	$8a,$80,$8a	XX......XX..
+		fcb	$8a,$80,$8a	XX......XX..
+		fcb	$8a,$80,$8a	XX......XX..
+		fcb	$8a,$80,$8a	XX......XX..
+		fcb	$8a,$80,$8a	XX......XX..
+		fcb	$8a,$80,$8a	XX......XX..
+		fcb	$85,$8f,$80	..XXXXXX....
+
+char_V		fcb	$8a,$80,$8a	XX......XX..
+		fcb	$8a,$80,$8a	XX......XX..
+		fcb	$8a,$80,$8a	XX......XX..
+		fcb	$85,$85,$80	..XX..XX....
+		fcb	$85,$85,$80	..XX..XX....
+		fcb	$80,$8a,$80	....XX......
+		fcb	$80,$8a,$80	....XX......
+
+char_W		fcb	$8a,$80,$8a	XX......XX..
+		fcb	$8a,$80,$8a	XX......XX..
+		fcb	$8a,$80,$8a	XX......XX..
+		fcb	$8a,$80,$8a	XX......XX..
+		fcb	$8a,$8a,$8a	XX..XX..XX..
+		fcb	$8f,$85,$8a	XXXX..XXXX..
+		fcb	$8a,$80,$8a	XX......XX..
+
+char_X		fcb	$8a,$80,$8a	XX......XX..
+		fcb	$8a,$80,$8a	XX......XX..
+		fcb	$85,$85,$80	..XX..XX....
+		fcb	$80,$8a,$80	....XX......
+		fcb	$85,$85,$80	..XX..XX....
+		fcb	$8a,$80,$8a	XX......XX..
+		fcb	$8a,$80,$8a	XX......XX..
+
+char_Y		fcb	$8a,$80,$8a	XX......XX..
+		fcb	$8a,$80,$8a	XX......XX..
+		fcb	$85,$85,$80	..XX..XX....
+		fcb	$80,$8a,$80	....XX......
+		fcb	$80,$8a,$80	....XX......
+		fcb	$80,$8a,$80	....XX......
+		fcb	$80,$8a,$80	....XX......
+
+char_Z		fcb	$8f,$8f,$8a	XXXXXXXXXX..
+		fcb	$80,$80,$8a	........XX..
+		fcb	$80,$85,$80	......XX....
+		fcb	$80,$8a,$80	....XX......
+		fcb	$85,$80,$80	..XX........
+		fcb	$8a,$80,$80	XX..........
+		fcb	$8f,$8f,$8a	XXXXXXXXXX..
+
+char_mns	fcb	$80,$80,$80	............
+		fcb	$80,$80,$80	............
+		fcb	$80,$80,$80	............
+		fcb	$8f,$8f,$8a	XXXXXXXXXX..
+		fcb	$80,$80,$80	............
+		fcb	$80,$80,$80	............
+		fcb	$80,$80,$80	............
+
+char_exc	fcb	$8a,$80,$80	XX..........
+		fcb	$8a,$80,$80	XX..........
+		fcb	$8a,$80,$80	XX..........
+		fcb	$8a,$80,$80	XX..........
+		fcb	$8a,$80,$80	XX..........
+		fcb	$80,$80,$80	............
+		fcb	$8a,$80,$80	XX..........
+
+
+char_qst	fcb	$85,$8f,$80	..XXXXXX....
+		fcb	$8a,$80,$8a	XX......XX..
+		fcb	$80,$80,$8a	........XX..
+		fcb	$80,$85,$80	......XX....
+		fcb	$80,$8a,$80	....XX......
+		fcb	$80,$80,$80	............
+		fcb	$80,$8a,$80	....XX......
+
+char_asp	fcb	$80,$8a,$80	....XX......
+		fcb	$80,$8a,$80	....XX......
+		fcb	$80,$80,$80	............
+		fcb	$80,$80,$80	............
+		fcb	$80,$80,$80	............
+		fcb	$80,$80,$80	............
+		fcb	$80,$80,$80	............
+
+char_spc	fcb	$80,$80,$80	............
+		fcb	$80,$80,$80	............
+		fcb	$80,$80,$80	............
+		fcb	$80,$80,$80	............
+		fcb	$80,$80,$80	............
+		fcb	$80,$80,$80	............
+		fcb	$80,$80,$80	............
+
+
+
+
+		end start
 	
