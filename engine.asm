@@ -68,6 +68,9 @@ blitRowInc	rmb	2
 drawLocation	rmb	2
 drawColour	rmb	1
 
+		* Other variables
+randomState	rmb	1		Pseudo-random number state
+
 		* Game variables
 cycle		rmb	1
 page		rmb	2
@@ -78,7 +81,7 @@ clock		rmb	2
 ***************************************************************************************
 * Initialised area
 one		fcb	0,1		Value of one, for incrementing BCD values
-
+taps		fcb	$b4		Pseudo-random number coefficients for LFSR
 
 ***************************************************************************************
 * FPS constants
@@ -110,6 +113,7 @@ pistonBotOff	equ	$0300		Offset for the piston at bottom
 
 clockPos	equ	$18		Clock
 fpsPos		equ	psize-(5*32)-18	FPS counter
+lightPos	equ	psize-(5*32)	Light
 
 
 ***************************************************************************************
@@ -173,6 +177,8 @@ start
 		clr	currentFps
 		lda	#fpsLimit
 		sta	fpsLimitCount
+		lda	$0113		Basic timer (should be random the number we get)
+		sta	randomState	for initial seed for pseudo-random number generator
 		clra
 		clrb
 		std	ticks
@@ -219,6 +225,13 @@ drawClock
 		ldy	#clock
 		lbsr	printBcd
 
+drawRandomLight
+		lbsr	getRand
+		cmpa	#$80
+		bls	drawCycle
+		ldx	page
+		leax	lightPos,x
+		lbsr	blitLight
 drawCycle
 		* Draw left cylinder
 		ldx	page
@@ -368,6 +381,13 @@ blitFire	* Draw ignition
 		bsr	blit
 		rts
 
+blitLight	* Draw ignition
+		* x - location to draw
+		lda	#4		Height
+		ldb	#2		Width
+		ldy	#lightBitmap
+		bsr	blit
+		rts
 
 *******************************************************************************
 * Helper routines
@@ -488,6 +508,23 @@ blitDigit	* Blit a single digit
 		dec	blitRows
 		bne	blitDigit
 		rts
+
+seedRand	* Seed random number
+		* No parameters
+		lda	ticks+1
+		sta	randomState
+		rts
+getRand		* Get random number (a - random bit on return)
+		* No parameters
+		* Uses the Galois form to express the LFSR
+		lda	randomState
+		tfr	a,b
+		lsrb
+		bita	#$01
+		beq	getRand@1
+		eorb	taps
+getRand@1	stb	randomState
+		rts	
 
 
 *******************************************************************************
@@ -637,6 +674,13 @@ fireBitmap
 	fcb	$ff,$ff,$ff,$ff,$ff,$ff,$ff,$ff	
 	fcb	$bf,$ff,$ff,$ff,$ff,$ff,$ff,$bf	
 	fcb	$bf,$bf,$ff,$ff,$ff,$ff,$bf,$bf	
+
+* Light bitmap
+lightBitmap
+	fcb	$a5,$aa
+	fcb	$af,$af
+	fcb	$af,$af
+	fcb	$a5,$aa
 
 * Number bitmaps
 digitLookup
