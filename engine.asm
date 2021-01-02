@@ -851,7 +851,7 @@ showPage@2
 		sta	$ffcd		+$1000 = $1600
 showPage@Done
 		lda	frameCount	Track fps
-		adda	#1		Increment each page switch
+		adda	#1		Increment each page switch (inca won't work here)
 		daa
 		sta	frameCount
 		clr	pageRequest	Mark switch was made
