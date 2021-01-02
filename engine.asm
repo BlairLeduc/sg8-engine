@@ -287,7 +287,7 @@ drawJoystickValues@1
 		lda	#yellow
 		tst	joystickLeftButton
 		bne	drawJoystickValues@2
-		lda	#green
+		lda	#cyan
 drawJoystickValues@2
 		* Draw left joystick values
 		ldb	#2
