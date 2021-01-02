@@ -100,7 +100,7 @@ taps		fcb	$b4		Pseudo-random number coefficients for LFSR
 
 ***************************************************************************************
 * FPS constants
-fpsTarget	equ	20		Valid FPS limits: 60, 30, 20, 15, 12, 10, ...
+fpsTarget	equ	15		Valid FPS limits: 60, 30, 20, 15, 12, 10, ...
 fpsLimit	equ	(60/fpsTarget)
 
 
