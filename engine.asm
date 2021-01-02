@@ -53,32 +53,43 @@ irqVector	equ	$010c
 		org	$2000
 
 		* Interrup handler variables
-ticks		rmb	2
-secondKeeping	rmb	1
+ticks		rmb	2		Time since game started in 16.7ms ticks
+secondKeeping	rmb	1		Ticks since last second
 pageRequest	rmb	1		Page switch request
-frameCount	rmb	1
-isInTime	rmb	1
-currentFps	rmb	1
-fpsLimitCount	rmb	1
+frameCount	rmb	1		Count of frames occurred in this second
+isInTime	rmb	1		Did we finish drawing in time?
+currentFps	rmb	1		FPS from the last second
+fpsLimitCount	rmb	1		Frame count used to limit FPS to target rate
 
 		* Draw/Blit variables
-blitRows	rmb	1
-blitCols	rmb	1
-blitRowInc	rmb	2
-drawLocation	rmb	2
-drawColour	rmb	1
+blitRows	rmb	1		Row counter when blit'ing
+blitCols	rmb	1		Number of columns to blit
+blitRowInc	rmb	2		Bytes to increment to get to next screen line
+drawLocation	rmb	2		Location to start blit'ing (screen)
+drawColour	rmb	1		The color used for drawing text and numbers
+
+		* Joystick values
+joystickLeftX	rmb	1
+joystickLeftY	rmb	1
+joystickLeftButton rmb	1
+
+joystickRightX	rmb	1
+joystickRightY	rmb	1
+joystickRightButton rmb 1
+joystickRight	rmb	2		Joystick Right BCD value
+joystickLeft	rmb	2		Joystick Left BCD value
 
 		* Other variables
 randomState	rmb	1		Pseudo-random number state
-randomNumber	rmb	1
-randomCount	rmb	1
+randomNumber	rmb	1		Calculated pseudo-random number
+randomCount	rmb	1		How many random bits to get for a random number
 
 
 		* Game variables
-cycle		rmb	1
-page		rmb	2
-sound		rmb	1
-clock		rmb	2
+cycle		rmb	1		The current cycle of the engine
+page		rmb	2		The start of the current drawing page
+sound		rmb	1		The sound effects to play
+clock		rmb	2		Our second count
 
 
 ***************************************************************************************
@@ -94,7 +105,7 @@ fpsLimit	equ	(60/fpsTarget)
 
 
 ***************************************************************************************
-* Semigraphics constants
+* Semigraphics colours
 green		equ	$00
 yellow		equ	$10
 blue		equ	$20
@@ -115,10 +126,12 @@ pistonTopOff	equ	$0100		Offset for the piston at top
 pistonMidOff	equ	$0200		Offset for the piston at middle
 pistonBotOff	equ	$0300		Offset for the piston at bottom
 
-titlePos	equ	32+1
-clockPos	equ	64-(4*2)-1	Clock
-fpsPos		equ	psize-(6*32)-18	FPS counter
-lightPos	equ	psize-(6*32)+1	Light
+titlePos	equ	0
+clockPos	equ	32-(4*2)	Clock
+joystickLeftPos	equ	8*32
+joystickRightPos equ	(8*32)-(4*2)
+fpsPos		equ	psize-(5*32)-18	FPS counter
+lightPos	equ	psize-(5*32)	Light
 
 
 ***************************************************************************************
@@ -152,17 +165,17 @@ start
 		ldy	#interrupt 	Set the IRQ vector
 		sty	irqVector+1
 		* Enable IRQ from VDG circuit (every 16.7ms)
-		lda	$ff03		Read CRB of PA1
-		ora	#$05		Enable interrupt to CPU
+		lda	$ff03		
+		ora	#$05		Enable VSYNC IRQ
 		sta	$ff03
 		lda	$ff02		Clear interrupt flag
 		* Set up semigraphics 8
 		lda	$ff22	
-		anda	#$7
+		anda	#$7		Set alphanum, GM = 0, CSS = 0
 		sta	$ff22
-		sta	$ffc4
-		sta	$ffc3
-		sta	$ffc0
+		sta	$ffc4		SAM V2 = 0
+		sta	$ffc3		SAM V1 = 1
+		sta	$ffc0		SAM V0 = 0
 		* Show page 1 ($0e00) 
 		sta	$ffc7		1 -> $0200
 		sta	$ffc9		1 -> $0400
@@ -171,16 +184,6 @@ start
 		sta	$ffce		0 -> $2000
 		sta	$ffd0		0 -> $4000
 		sta	$ffd2		0 -> $8000
-		* Enable sound
-		lda	$ff01		Select sound out
-		anda	#$f7		Reset mux bit
-		sta	$ff01
-		lda	$ff03		Select sount out
-		anda	#$f7		Reset mux bit
-		sta	$ff03
-		lda	$ff23		Get PIA
-		ora	#8		6-bit sound enable
-		sta	$ff23
 		* Initialise page request to None
 		clr	pageRequest
 		* Initialise clock
@@ -207,6 +210,12 @@ loop@		std	,x++
 		sta	cycle
 		sta	sound
 		std	clock
+		std	joystickLeft
+		std	joystickRight
+		sta	joystickRightX
+		sta	joystickRightY
+		sta	joystickLeftX
+		sta	joystickLeftY
 		ldx	#page1
 		stx	page
 		* Enable IRQ (FIRQ disabled)
@@ -246,6 +255,47 @@ drawClock
 		ldy	#clock
 		lbsr	printBcd
 
+drawJoystickValues
+		* Draw the values from the joysticks
+		* Convert right joystick values to BCD
+		lda	joystickRightX
+		lbsr	byteToBcd
+		sta	joystickRight
+		lda	joystickRightY
+		lbsr	byteToBcd
+		sta	joystickRight+1
+		* Yellow = button pressed, cyan if not
+		lda	#yellow
+		tst	joystickRightButton
+		bne	drawJoystickValues@1
+		lda	#cyan
+drawJoystickValues@1
+		* Draw right joystick values
+		ldb	#2
+		ldx	page
+		leax	joystickRightPos,x
+		ldy	#joystickRight
+		lbsr	printBcd
+		* Convert left joystick values to BCD
+		lda	joystickLeftX
+		lbsr	byteToBcd
+		sta	joystickLeft
+		lda	joystickLeftY
+		lbsr	byteToBcd
+		sta	joystickLeft+1
+		* Yellow = button pressed, cyan if not
+		lda	#yellow
+		tst	joystickLeftButton
+		bne	drawJoystickValues@2
+		lda	#green
+drawJoystickValues@2
+		* Draw left joystick values
+		ldb	#2
+		ldx	page
+		leax	joystickLeftPos,x
+		ldy	#joystickLeft
+		lbsr	printBcd
+
 drawRandomLight
 		* Draw a light randomly
 		lbsr	getRandomBit
@@ -254,6 +304,7 @@ drawRandomLight
 		ldx	page
 		leax	lightPos,x
 		lbsr	blitLight
+
 drawCycle
 		* Draw left cylinder
 		ldx	page
@@ -331,13 +382,14 @@ mainEnd
 
 drawFps
 		* Draw the FPS counter
+		* (at the end so we can indicate if we took too long)
 		lda	isInTime
 		bne	drawFps@Under
 drawFps@Over
-		lda	#red
+		lda	#red		Took too long!
 		bne	drawFps@Counter
 drawFps@Under	
-		lda	#green
+		lda	#green		Met our time requirement!
 drawFps@Counter
 		ldb	#1		One pair of digits
 		ldx	page
@@ -485,8 +537,7 @@ drawText	* Draw a zero terminated string
 loop@		ldy	#charLookup
 		anda	#$1f		Mask for lookup table
 		lsla			Muliply by 2 to index into 16-bit table
-		leay	a,y		Index to lookup digit bitmap
-		ldy	,y		Get location of digit
+		leay	[a,y]		Index to lookup digit bitmap
 		lda	#7		Height of a digit
 		sta	blitRows
 		lbsr	blitChar
@@ -503,8 +554,28 @@ loop@		ldy	#charLookup
 
 *******************************************************************************
 * Sound generation routines
+enableSound
+		* Select 6-bit DAC as the sound source (00)
+		lda	$ff01		
+		anda	#$f7		Clear LSB of select MUX
+		sta	$ff01
+		lda	$ff03
+		anda	#$f7		Clear MSB of select MUX
+		sta	$ff03
+		* Enable sound
+		lda	$ff23
+		ora	#8		Sound enable
+		sta	$ff23
+		rts
+disableSound
+		lda	$ff23
+		anda	#$f7		Sound disable
+		sta	$ff23
+		rts
+
 soundBang	* Creates a bang sound for ignition
 		* No parameters
+		bsr	enableSound
 		ldx	#$8000		Start address for sound data
 loop@1		lda	,x+	
 		anda	#$fc		Reset 2 least-significant bits
@@ -512,12 +583,99 @@ loop@1		lda	,x+
 		bsr	soundBang@Delay	
 		cmpx	#$8010
 		bne	loop@1		Loop if not end
+		bsr	disableSound
 		rts
 soundBang@Delay
 		lda	#$80		Frequency delay
 loop@2		deca
 		bne	loop@2
 		rts
+
+*******************************************************************************
+* Joystick routines
+readJoysticks	* Read all joystick values and buttons
+		* Right joystick X
+        	lda	$ff01
+        	anda	#$f7		X
+        	sta	$ff01
+        	lda	$ff03
+         	anda	#$f7		Right
+        	sta	$ff03
+		ldx	#joystickRightX
+		bsr	readJoystick
+		* Right joystick Y
+        	lda	$ff01
+        	ora	#$08		Y
+        	sta	$ff01
+        	lda	$ff03
+         	anda	#$f7		Right
+        	sta	$ff03
+		ldx	#joystickRightY
+		bsr	readJoystick
+		* Left joystick X
+        	lda	$ff01
+        	anda	#$f7		X
+        	sta	$ff01
+        	lda	$ff03
+         	ora	#$08		Left
+        	sta	$ff03
+		ldx	#joystickLeftX
+		bsr	readJoystick
+		* Left joystick Y
+        	lda	$ff01
+        	ora	#$08		Y
+        	sta	$ff01
+        	lda	$ff03
+         	ora	#$08		Left
+        	sta	$ff03
+		ldx	#joystickLeftY
+		bsr	readJoystick
+		* Read buttons
+        	clra
+		sta	joystickLeftButton
+		sta	joystickRightButton
+        	ldb	#$FF
+        	stb	$FF02
+        	ldb	$FF00
+        	clr	$FF02
+readJoysticks@Right
+		* Check the right joystick button
+        	bitb	#$01
+		bne	readJoysticks@Left
+		lda	#1
+		sta	joystickRightButton
+readJoysticks@Left
+		* Check the left joystick button
+        	bitb	#$02
+		bne	readJoysticks@Done
+		lda	#1
+		sta	joystickLeftButton
+readJoysticks@Done
+        	rts
+
+
+readJoystick
+		* Find the voltage  (joystick input must be selected)
+		* x - points to where the result will be stored
+        	lda	#$80		Start in the middle (2.5V)
+        	ldb	#$40		Shift counter for 6 bits to convert (0-63)
+loop@		stb	,x		Use the result as a temp
+        	sta	$ff20		
+        	tst	$ff00		Sign bit is the output of the comparator
+        	bmi	readJoystick@Plus
+readJoystick@Minus
+		suba	,x		Subtract half the difference
+		bra	readJoystick@Next
+readJoystick@Plus
+        	adda	,x		Add half the difference
+readJoystick@Next
+		lsrb			Shift the counter
+        	cmpb	#$01		Done?
+        	bhi	loop@
+        	lsra			Values in top 6 bits
+        	lsra			Shift to correct range
+		sta	,x		Record the result
+         	rts
 
 
 *******************************************************************************
@@ -553,8 +711,7 @@ loop@
 		lsra			And shift it down
 		lsra
 		lsra			But leave as * 2 to index into 16-bit table
-		leay	a,y		Index to lookup digit bitmap
-		ldy	,y		Get location of digit
+		leay	[a,y]		Index to lookup digit bitmap
 		lda	#5		Height of a digit
 		sta	blitRows
 		lbsr	blitDigit
@@ -567,8 +724,7 @@ loop@
 		lda	,u+		Get number to draw
 		anda	#$0f		Now draw least-significat nibble
 		lsla			Multiply by 2 to index into 16-bit table
-		leay	a,y		Index to lookup digit bitmap
-		ldy	,y		Get location of digit
+		leay	[a,y]		Index to lookup digit bitmap
 		lda	#5
 		sta	blitRows
 		lbsr	blitDigit
@@ -580,6 +736,25 @@ loop@
 		dec	blitCols
 		bne	loop@
 		rts
+
+byteToBcd	* Convert byte to BCD (0-99)
+		* a - byte to convert
+		clrb
+loop@		
+		suba	#10
+		bmi	byteToBcd@Done
+		incb
+		bra 	loop@
+byteToBcd@Done
+		adda	#10
+		lslb
+		lslb
+		lslb
+		lslb
+		pshs	b
+		ora	,s+
+		rts
+
 
 
 *******************************************************************************
@@ -676,10 +851,13 @@ showPage@2
 		sta	$ffcd		+$1000 = $1600
 showPage@Done
 		lda	frameCount	Track fps
-		inca			Increment each page switch
+		adda	#1		Increment each page switch
 		daa
 		sta	frameCount
 		clr	pageRequest	Mark switch was made
+
+		* Read both joysticks
+		lbsr readJoysticks
 
 interruptRti
 		lda	$ff02		Reset irq trigger
