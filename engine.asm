@@ -1,24 +1,10 @@
-* Simple 2 cylinder 1-stroke engine :)
-*	
-* Copyright © 2020 Blair Leduc
+***************************************************************************************
+* Simple 2 cylinder 1-stroke engine
 *
-* Permission is hereby granted, free of charge, to any person obtaining a copy
-* of this software and associated documentation files (the "Software"), to deal
-* in the Software without restriction, including without limitation the rights
-* to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-* copies of the Software, and to permit persons to whom the Software is
-* furnished to do so, subject to the following conditions:
-*
-* The above copyright notice and this permission notice shall be included in all
-* copies or substantial portions of the Software.
-*
-* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-* IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-* FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-* AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-* LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-* OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-* SOFTWARE.
+* A demo to learn the skills needed to write a game using semi-graphics 8 on the 
+* TRS-80/Tandy Color Computer.
+
+		pragma	autobranchlength
 
 		nam	/engine/
 		use	bitmaps.asm
@@ -46,6 +32,7 @@ directPage	equ	$20
 
 ***************************************************************************************
 * System equates
+
 irqVector	equ	$010c
 
 ***************************************************************************************
@@ -99,18 +86,21 @@ clock		rmb	2		Our second count
 
 ***************************************************************************************
 * Initialised area
+
 one		fcb	0,1		Value of one, for incrementing BCD values
 taps		fcb	$b4		Pseudo-random number coefficients for LFSR
 
 
 ***************************************************************************************
 * FPS constants
+
 fpsTarget	equ	15		Valid FPS limits: 60, 30, 20, 15, 12, 10, ...
 fpsLimit	equ	(60/fpsTarget)
 
 
 ***************************************************************************************
 * Semigraphics colours
+
 green		equ	$00
 yellow		equ	$10
 blue		equ	$20
@@ -123,6 +113,7 @@ orange		equ	$70
 
 ***************************************************************************************
 * Object screen positon constants
+
 cylinderLeftPos	equ	$01e3		Left cylinder
 cylinderRightPos equ	$01f3		Right cylnder
 pistonLeftPos	equ	$0204		Left piston
@@ -148,15 +139,18 @@ bang		equ	$01
 
 ***************************************************************************************
 * Program area
+
 		org	$2100
 
 ***************************************************************************************
 * Game text
+
 engine		fcn	/Engine|/
 
 
 ***************************************************************************************
 * Start of game
+
 start	
 		* Set up
 		orcc	#$50		Turn off IRQ and FIRQ
@@ -229,6 +223,7 @@ loop@		std	,x++
 
 ***************************************************************************************
 * Main loop
+
 mainLoop
 		* Detect when we take too long and do not meet the FPS setting 
 		lda	#1
@@ -238,7 +233,7 @@ soundEffects
 		* Run sound for page that is shown
 		lda	sound
 		beq	draw
-		lbsr	soundBang	...and bang for shown page
+		bsr	soundBang	...and bang for shown page
 
 draw
 		* Draw page content on hidden page
@@ -249,7 +244,7 @@ drawTitle
 		lda	#cyan
 		ldx	page
 		ldy	#engine
-		lbsr	drawText
+		bsr	drawText
 
 drawClock
 		* Draw clock
@@ -258,16 +253,16 @@ drawClock
 		ldx	page
 		leax	clockPos,x
 		ldy	#clock
-		lbsr	printBcd
+		bsr	printBcd
 
 drawJoystickValues
 		* Draw the values from the joysticks
 		* Convert right joystick values to BCD
 		lda	rightJoystick.x
-		lbsr	byteToBcd
+		bsr	byteToBcd
 		sta	joystickRight
 		lda	rightJoystick.y
-		lbsr	byteToBcd
+		bsr	byteToBcd
 		sta	joystickRight+1
 		* Yellow = button pressed, cyan if not
 		lda	#yellow
@@ -280,13 +275,13 @@ drawJoystickValues@1
 		ldx	page
 		leax	joystickRightPos,x
 		ldy	#joystickRight
-		lbsr	printBcd
+		bsr	printBcd
 		* Convert left joystick values to BCD
 		lda	rightJoystick.x
-		lbsr	byteToBcd
+		bsr	byteToBcd
 		sta	joystickLeft
 		lda	rightJoystick.y
-		lbsr	byteToBcd
+		bsr	byteToBcd
 		sta	joystickLeft+1
 		* Yellow = button pressed, cyan if not
 		lda	#yellow
@@ -299,26 +294,26 @@ drawJoystickValues@2
 		ldx	page
 		leax	joystickLeftPos,x
 		ldy	#joystickLeft
-		lbsr	printBcd
+		bsr	printBcd
 
 drawRandomLight
 		* Draw a light randomly
-		lbsr	getRandomBit
+		bsr	getRandomBit
 		anda	#$01
 		bne	drawCycle
 		ldx	page
 		leax	lightPos,x
-		lbsr	blitLight
+		bsr	blitLight
 	
 drawCycle
 		* Draw left cylinder
 		ldx	page
 		leax	cylinderLeftPos,x
-		lbsr	blitCylinder
+		bsr	blitCylinder
 		* Draw right cylinder
 		ldx	page
 		leax	cylinderRightPos,x
-		lbsr	blitCylinder
+		bsr	blitCylinder
 drawCycle@0
 		* Draw cycle 0: left piston at bottom, 
 		* right piston at top with ignition
@@ -328,15 +323,15 @@ drawCycle@0
 		* Draw left piston
 		ldx	page
 		leax	pistonLeftPos+pistonBotOff,x
-		lbsr	blitPiston
+		bsr	blitPiston
 		* Draw right pistion
 		ldx	page
 		leax	pistonRightPos+pistonTopOff,x
-		lbsr	blitPiston
+		bsr	blitPiston
 		* Draw ignition on right piston
 		ldx	page
 		leax	pistonRightPos,x
-		lbsr	blitFire
+		bsr	blitFire
 		* Need a bang for the ignition
 		lda	#bang
 		sta	sound
@@ -350,15 +345,15 @@ drawCycle@2
 		* Draw left piston
 		ldx	page
 		leax	pistonLeftPos+pistonTopOff,x
-		lbsr	blitPiston
+		bsr	blitPiston
 		* Draw right pistion
 		ldx	page
 		leax	pistonRightPos+pistonBotOff,x
-		lbsr	blitPiston
+		bsr	blitPiston
 		* Draw ignition on left piston
 		ldx	page
 		leax	pistonLeftPos,x
-		lbsr	blitFire
+		bsr	blitFire
 		* Need a bang for the ignition
 		lda	#bang
 		sta	sound
@@ -368,11 +363,11 @@ drawCycle@Others
 		* Draw left piston 
 		ldx	page
 		leax	pistonLeftPos+pistonMidOff,x
-		lbsr	blitPiston
+		bsr	blitPiston
 		* Draw right piston
 		ldx	page
 		leax	pistonRightPos+pistonMidOff,x
-		lbsr	blitPiston
+		bsr	blitPiston
 		* No bang needed
 drawCycle@SetNext	
 		lda	cycle
@@ -400,7 +395,7 @@ drawFps@Counter
 		ldx	page
 		leax	fpsPos,x
 		ldy	#currentFps
-		lbsr	printBcd
+		bsr	printBcd
 
 doubleBuffer
 		* Switch to other page for double buffering
@@ -410,7 +405,7 @@ doubleBuffer
 showPage@2
 		* Show page 2 and clear page 1 and set for drawing
 		lda	#2
-		lbsr	showPage
+		bsr	showPage
 		ldx	#page1
 		stx	page		Start drawing on page 1
 		lda	#$80
@@ -418,11 +413,11 @@ showPage@2
 loop@2		std	,x++		Clear page 1
 		cmpx	#page1+psize
 		blo	loop@2	
-		lbra	mainLoop
+		bra	mainLoop
 showPage@1
 		* Show page 1 and clear page 2 and set for drawing
 		lda	#1
-		lbsr	showPage
+		bsr	showPage
 		ldx	#page2		Start drawing on page 2
 		stx	page
 		lda	#$80
@@ -430,11 +425,12 @@ showPage@1
 loop@1		std	,x++		Clear page 2
 		cmpx	#page2+psize
 		blo	loop@1
-		lbra	mainLoop
+		bra	mainLoop
 
 
 *******************************************************************************
 * Drawing routines
+
 blitCylinder	* Draw a cylinder
 		* x - location to draw
 		lda	#35		Height
@@ -469,6 +465,7 @@ blitLight	* Draw ignition
 
 *******************************************************************************
 * Blit routines
+
 blit		* Copy bitmap onto page
 		* a - height
 		* b - width
@@ -522,6 +519,7 @@ blitChar	* Blit a single character
 
 *******************************************************************************
 * Helper routines
+
 showPage	* Switch to page and wait for page to be visible
 		* a - page to show
 		sta	pageRequest	For irq handler
@@ -543,7 +541,7 @@ loop@		ldy	#charLookup
 		leay	[a,y]		Index to lookup digit bitmap
 		lda	#7		Height of a digit
 		sta	blitRows
-		lbsr	blitChar
+		bsr	blitChar
 		* Move to next location to draw
 		ldx	drawLocation
 		leax	3,x
@@ -556,6 +554,7 @@ loop@		ldy	#charLookup
 
 *******************************************************************************
 * Sound generation routines
+
 enableSound
 		* Select 6-bit DAC as the sound source (00)
 		lda	$ff01		
@@ -596,6 +595,7 @@ loop@2		deca
 
 *******************************************************************************
 * Joystick routines
+
 readJoysticks	* Read all joystick values and buttons
 		* Right joystick X
         	lda	$ff01
@@ -683,6 +683,7 @@ readJoystick@Next
 
 *******************************************************************************
 * BCD routines
+
 addBcd		* Add two BCD numbers, result to address in y
 		* b - size of bcd number
 		* x - points to value to add (BCD)
@@ -717,7 +718,7 @@ loop@
 		leay	[a,y]		Index to lookup digit bitmap
 		lda	#5		Height of a digit
 		sta	blitRows
-		lbsr	blitDigit
+		bsr	blitDigit
 		* Move to next location to draw
 		ldx	drawLocation
 		leax	2,x
@@ -730,7 +731,7 @@ loop@
 		leay	[a,y]		Index to lookup digit bitmap
 		lda	#5
 		sta	blitRows
-		lbsr	blitDigit
+		bsr	blitDigit
 		* Move to next location to draw
 		ldx	drawLocation
 		leax	2,x
@@ -758,8 +759,7 @@ byteToBcd@Done
 		ora	,s+
 		rts
 
-nibbleToAscii
-		* From Doug Masten on Discord (Motorola Assist09)
+nibbleToAscii	* From Doug Masten on Discord (Motorola Assist09)
 		adda	#$90		prepare a-f adjust
 		daa			adjust
 		adca	#$40		prepare character bits
@@ -769,6 +769,7 @@ nibbleToAscii
 
 *******************************************************************************
 * Peusdo-random number routines
+
 seedRand	* Seed random number
 		* No parameters
 		lda	ticks+1
@@ -776,6 +777,7 @@ seedRand	* Seed random number
 		inca			Make sure not to seed with zero
 seedRand@1	sta	randomState
 		rts
+
 getRandomBit	* Get a random bit (a - random bit on return)
 		* No parameters
 		* Uses the Galois form to express the LFSR
@@ -792,7 +794,7 @@ getRandomBits	* Get random value (result stored in randomNumber)
 		* a - number of bits
 		sta	randomCount
 		clr	randomNumber
-getRandomBits@1	lbsr	getRandomBit
+getRandomBits@1	bsr	getRandomBit
 		ora	randomNumber
 		sta	randomNumber
 		dec	randomCount
@@ -804,6 +806,7 @@ getRandomBits@2	rts
 
 *******************************************************************************
 * IRQ interrupt handler
+
 interrupt	* IRQ interrupt handler
 		ldd	ticks
 		addd	#1
@@ -819,7 +822,7 @@ everySecond
 		ldb	#2		Two byte BCD
 		ldx	#one+2		Add a second to the clock
 		ldy	#clock+2
-		lbsr	addBcd
+		bsr	addBcd
 		
 		* Store FPS for display and reset FPS counter
 		lda	frameCount
@@ -867,7 +870,7 @@ showPage@Done
 		clr	pageRequest	Mark switch was made
 
 		* Read both joysticks
-		lbsr	readJoysticks
+		bsr	readJoysticks
 
 interruptRti
 		lda	$ff02		Reset irq trigger
