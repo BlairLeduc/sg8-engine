@@ -1,5 +1,5 @@
 * Simple 2 cylinder 1-stroke engine :)
-*
+*	
 * Copyright © 2020 Blair Leduc
 *
 * Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -20,7 +20,8 @@
 * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 * SOFTWARE.
 
-		nam	engine
+		nam	/engine/
+		use	bitmaps.asm
 
 ***************************************************************************************
 * Memory map
@@ -40,7 +41,6 @@ stack		equ	$2000
 psize		equ	$0800		Size of a page (2K for SG8)
 page1		equ	$0e00		Start of graphics memory
 page2		equ	page1+psize
-
 directPage	equ	$20
 
 
@@ -69,13 +69,15 @@ drawLocation	rmb	2		Location to start blit'ing (screen)
 drawColour	rmb	1		The color used for drawing text and numbers
 
 		* Joystick values
-joystickLeftX	rmb	1
-joystickLeftY	rmb	1
-joystickLeftButton rmb	1
+joystick	struct
+x		rmb	1
+y		rmb	1
+button		rmb	1
+		endstruct
 
-joystickRightX	rmb	1
-joystickRightY	rmb	1
-joystickRightButton rmb 1
+leftJoystick	joystick
+rightJoystick	joystick
+
 joystickRight	rmb	2		Joystick Right BCD value
 joystickLeft	rmb	2		Joystick Left BCD value
 
@@ -84,13 +86,16 @@ randomState	rmb	1		Pseudo-random number state
 randomNumber	rmb	1		Calculated pseudo-random number
 randomCount	rmb	1		How many random bits to get for a random number
 
-
 		* Game variables
 cycle		rmb	1		The current cycle of the engine
 page		rmb	2		The start of the current drawing page
 sound		rmb	1		The sound effects to play
 clock		rmb	2		Our second count
 
+		* Make sure we don't overflow the direct page
+		ifge	*-$2100
+		error	Direct Page overflow!
+		endc
 
 ***************************************************************************************
 * Initialised area
@@ -147,7 +152,7 @@ bang		equ	$01
 
 ***************************************************************************************
 * Game text
-engine		fcn	'Engine|'
+engine		fcn	/Engine|/
 
 
 ***************************************************************************************
@@ -212,10 +217,10 @@ loop@		std	,x++
 		std	clock
 		std	joystickLeft
 		std	joystickRight
-		sta	joystickRightX
-		sta	joystickRightY
-		sta	joystickLeftX
-		sta	joystickLeftY
+		sta	rightJoystick.x
+		sta	rightJoystick.y
+		sta	leftJoystick.x
+		sta	leftJoystick.y
 		ldx	#page1
 		stx	page
 		* Enable IRQ (FIRQ disabled)
@@ -258,15 +263,15 @@ drawClock
 drawJoystickValues
 		* Draw the values from the joysticks
 		* Convert right joystick values to BCD
-		lda	joystickRightX
+		lda	rightJoystick.x
 		lbsr	byteToBcd
 		sta	joystickRight
-		lda	joystickRightY
+		lda	rightJoystick.y
 		lbsr	byteToBcd
 		sta	joystickRight+1
 		* Yellow = button pressed, cyan if not
 		lda	#yellow
-		tst	joystickRightButton
+		tst	rightJoystick.button
 		bne	drawJoystickValues@1
 		lda	#cyan
 drawJoystickValues@1
@@ -277,15 +282,15 @@ drawJoystickValues@1
 		ldy	#joystickRight
 		lbsr	printBcd
 		* Convert left joystick values to BCD
-		lda	joystickLeftX
+		lda	rightJoystick.x
 		lbsr	byteToBcd
 		sta	joystickLeft
-		lda	joystickLeftY
+		lda	rightJoystick.y
 		lbsr	byteToBcd
 		sta	joystickLeft+1
 		* Yellow = button pressed, cyan if not
 		lda	#yellow
-		tst	joystickLeftButton
+		tst	rightJoystick.button
 		bne	drawJoystickValues@2
 		lda	#cyan
 drawJoystickValues@2
@@ -304,7 +309,7 @@ drawRandomLight
 		ldx	page
 		leax	lightPos,x
 		lbsr	blitLight
-
+	
 drawCycle
 		* Draw left cylinder
 		ldx	page
@@ -487,7 +492,6 @@ loop@2		ldu	,y++		Copy row
 		bne	loop@1
 		rts
 
-
 blitDigit	* Blit a single digit
 		* x - points to location in screen memory 
 		* y - points to digit bitmap
@@ -525,7 +529,6 @@ loop@		lda	pageRequest	Wait until page switch is complete
 		bne	loop@		Request is serviced when pageReq reset to 0
 		rts
 
-
 drawText	* Draw a zero terminated string
 		* a - colour (0-7) in high nibble
 		* x - position to print
@@ -549,7 +552,6 @@ loop@		ldy	#charLookup
 		lda	,u+		Get next character to draw
 		bne	loop@
 		rts
-
 
 
 *******************************************************************************
@@ -591,6 +593,7 @@ loop@2		deca
 		bne	loop@2
 		rts
 
+
 *******************************************************************************
 * Joystick routines
 readJoysticks	* Read all joystick values and buttons
@@ -601,7 +604,7 @@ readJoysticks	* Read all joystick values and buttons
         	lda	$ff03
          	anda	#$f7		Right
         	sta	$ff03
-		ldx	#joystickRightX
+		ldx	#rightJoystick.x
 		bsr	readJoystick
 		* Right joystick Y
         	lda	$ff01
@@ -610,7 +613,7 @@ readJoysticks	* Read all joystick values and buttons
         	lda	$ff03
          	anda	#$f7		Right
         	sta	$ff03
-		ldx	#joystickRightY
+		ldx	#rightJoystick.y
 		bsr	readJoystick
 		* Left joystick X
         	lda	$ff01
@@ -619,7 +622,7 @@ readJoysticks	* Read all joystick values and buttons
         	lda	$ff03
          	ora	#$08		Left
         	sta	$ff03
-		ldx	#joystickLeftX
+		ldx	#leftJoystick.x
 		bsr	readJoystick
 		* Left joystick Y
         	lda	$ff01
@@ -628,12 +631,12 @@ readJoysticks	* Read all joystick values and buttons
         	lda	$ff03
          	ora	#$08		Left
         	sta	$ff03
-		ldx	#joystickLeftY
+		ldx	#leftJoystick.y
 		bsr	readJoystick
 		* Read buttons
         	clra
-		sta	joystickLeftButton
-		sta	joystickRightButton
+		sta	rightJoystick.button
+		sta	leftJoystick.button
         	ldb	#$FF
         	stb	$FF02
         	ldb	$FF00
@@ -643,13 +646,13 @@ readJoysticks@Right
         	bitb	#$01
 		bne	readJoysticks@Left
 		lda	#1
-		sta	joystickRightButton
+		sta	rightJoystick.button
 readJoysticks@Left
 		* Check the left joystick button
         	bitb	#$02
 		bne	readJoysticks@Done
 		lda	#1
-		sta	joystickLeftButton
+		sta	leftJoystick.button
 readJoysticks@Done
         	rts
 
@@ -702,7 +705,7 @@ printBcd	* Prints a BCD number to the screen
 		stb	blitCols
 		stx	drawLocation
 		sta	drawColour
-		tfr	y,u		
+		tfr	y,u
 loop@
 		* Draw most-significant nibble
 		ldy	#digitLookup
@@ -755,6 +758,13 @@ byteToBcd@Done
 		ora	,s+
 		rts
 
+nibbleToAscii
+		* From Doug Masten on Discord (Motorola Assist09)
+		adda	#$90		prepare a-f adjust
+		daa			adjust
+		adca	#$40		prepare character bits
+		daa
+		rts			adjust
 
 
 *******************************************************************************
@@ -800,7 +810,7 @@ interrupt	* IRQ interrupt handler
 		std	ticks
 
 		* Check if we are on a second boundary
-		inc	secondKeeping		60 IRQs per sec (every 16.7ms)
+		inc	secondKeeping	60 IRQs per sec (every 16.7ms)
 		lda	#60
 		cmpa	secondKeeping
 		bhi	everyInterrupt
@@ -857,434 +867,10 @@ showPage@Done
 		clr	pageRequest	Mark switch was made
 
 		* Read both joysticks
-		lbsr readJoysticks
+		lbsr	readJoysticks
 
 interruptRti
 		lda	$ff02		Reset irq trigger
 		rti
 
-
-*****************************************************
-* BITMAPS
-
-* Cylinder walls
-cylinderBitmap	
-	fcb	$c5,$cf,$cf,$cf,$cf,$cf,$cf,$cf,$cf,$ca
-	fcb	$c5,$80,$80,$80,$80,$80,$80,$80,$80,$ca
-	fcb	$c5,$80,$80,$80,$80,$80,$80,$80,$80,$ca
-	fcb	$c5,$80,$80,$80,$80,$80,$80,$80,$80,$ca
-	fcb	$c5,$80,$80,$80,$80,$80,$80,$80,$80,$ca
-	fcb	$c5,$80,$80,$80,$80,$80,$80,$80,$80,$ca
-	fcb	$c5,$80,$80,$80,$80,$80,$80,$80,$80,$ca
-	fcb	$c5,$80,$80,$80,$80,$80,$80,$80,$80,$ca
-	fcb	$c5,$80,$80,$80,$80,$80,$80,$80,$80,$ca
-	fcb	$c5,$80,$80,$80,$80,$80,$80,$80,$80,$ca
-	fcb	$c5,$80,$80,$80,$80,$80,$80,$80,$80,$ca
-	fcb	$c5,$80,$80,$80,$80,$80,$80,$80,$80,$ca
-	fcb	$c5,$80,$80,$80,$80,$80,$80,$80,$80,$ca
-	fcb	$c5,$80,$80,$80,$80,$80,$80,$80,$80,$ca
-	fcb	$c5,$80,$80,$80,$80,$80,$80,$80,$80,$ca
-	fcb	$c5,$80,$80,$80,$80,$80,$80,$80,$80,$ca
-	fcb	$c5,$80,$80,$80,$80,$80,$80,$80,$80,$ca
-	fcb	$c5,$80,$80,$80,$80,$80,$80,$80,$80,$ca
-	fcb	$c5,$80,$80,$80,$80,$80,$80,$80,$80,$ca
-	fcb	$c5,$80,$80,$80,$80,$80,$80,$80,$80,$ca
-	fcb	$c5,$80,$80,$80,$80,$80,$80,$80,$80,$ca
-	fcb	$c5,$80,$80,$80,$80,$80,$80,$80,$80,$ca
-	fcb	$c5,$80,$80,$80,$80,$80,$80,$80,$80,$ca
-	fcb	$c5,$80,$80,$80,$80,$80,$80,$80,$80,$ca
-	fcb	$c5,$80,$80,$80,$80,$80,$80,$80,$80,$ca
-	fcb	$c5,$80,$80,$80,$80,$80,$80,$80,$80,$ca
-	fcb	$c5,$80,$80,$80,$80,$80,$80,$80,$80,$ca
-	fcb	$c5,$80,$80,$80,$80,$80,$80,$80,$80,$ca
-	fcb	$c5,$80,$80,$80,$80,$80,$80,$80,$80,$ca
-	fcb	$c5,$80,$80,$80,$80,$80,$80,$80,$80,$ca
-	fcb	$c5,$80,$80,$80,$80,$80,$80,$80,$80,$ca
-	fcb	$c5,$80,$80,$80,$80,$80,$80,$80,$80,$ca
-	fcb	$c5,$80,$80,$80,$80,$80,$80,$80,$80,$ca
-	fcb	$c5,$80,$80,$80,$80,$80,$80,$80,$80,$ca
-	fcb	$c5,$80,$80,$80,$80,$80,$80,$80,$80,$ca
-	fcb	$c5,$80,$80,$80,$80,$80,$80,$80,$80,$ca
-
-* Piston
-pistonBitmap	
-	fcb	$cf,$cf,$cf,$cf,$cf,$cf,$cf,$cf
-	fcb	$cf,$cf,$cf,$cf,$cf,$cf,$cf,$cf
-	fcb	$cf,$cf,$cf,$cf,$cf,$cf,$cf,$cf
-	fcb	$cf,$cf,$cf,$cf,$cf,$cf,$cf,$cf
-	fcb	$cf,$cf,$cf,$cf,$cf,$cf,$cf,$cf
-	fcb	$cf,$cf,$cf,$cf,$cf,$cf,$cf,$cf
-	fcb	$cf,$cf,$cf,$cf,$cf,$cf,$cf,$cf
-	fcb	$cf,$cf,$cf,$cf,$cf,$cf,$cf,$cf
-	fcb	$cf,$cf,$80,$c5,$ca,$80,$cf,$cf
-	fcb	$80,$80,$80,$c5,$ca,$80,$80,$80
-	fcb	$80,$80,$80,$c5,$ca,$80,$80,$80
-	fcb	$80,$80,$80,$c5,$ca,$80,$80,$80
-	fcb	$80,$80,$80,$c5,$ca,$80,$80,$80
-	fcb	$80,$80,$80,$c5,$ca,$80,$80,$80
-	fcb	$80,$80,$80,$c5,$ca,$80,$80,$80
-	fcb	$80,$80,$80,$c5,$ca,$80,$80,$80
-	fcb	$80,$80,$80,$c5,$ca,$80,$80,$80
-	fcb	$80,$80,$80,$c5,$ca,$80,$80,$80
-	fcb	$80,$80,$80,$c5,$ca,$80,$80,$80
-	fcb	$80,$80,$80,$c5,$ca,$80,$80,$80
-	fcb	$80,$80,$80,$c5,$ca,$80,$80,$80
-	fcb	$80,$80,$80,$c5,$ca,$80,$80,$80
-	fcb	$80,$80,$80,$c5,$ca,$80,$80,$80
-
-* Ignition in piston
-fireBitmap
-	fcb	$ff,$ff,$9f,$9f,$9f,$9f,$ff,$ff	
-	fcb	$ff,$ff,$ff,$9f,$9f,$ff,$ff,$ff	
-	fcb	$ff,$ff,$ff,$ff,$ff,$ff,$ff,$ff	
-	fcb	$ff,$ff,$ff,$ff,$ff,$ff,$ff,$ff	
-	fcb	$ff,$ff,$ff,$ff,$ff,$ff,$ff,$ff	
-	fcb	$ff,$ff,$ff,$ff,$ff,$ff,$ff,$ff	
-	fcb	$bf,$ff,$ff,$ff,$ff,$ff,$ff,$bf	
-	fcb	$bf,$bf,$ff,$ff,$ff,$ff,$bf,$bf	
-
-* Light bitmap
-lightBitmap
-	fcb	$a5,$aa
-	fcb	$af,$af
-	fcb	$af,$af
-	fcb	$a5,$aa
-
-* Number bitmaps
-digitLookup
-	fdb	digit0,digit1,digit2,digit3,digit4
-	fdb	digit5,digit6,digit7,digit8,digit9
-
-digit0	fcb	$8f,$8a XXXXXX..
-	fcb	$8a,$8a XX..XX..
-	fcb	$8a,$8a XX..XX..
-	fcb	$8a,$8a XX..XX..
-	fcb	$8f,$8a XXXXXX..
-
-digit1	fcb	$85,$80 ..XX....
-	fcb	$85,$80 ..XX....
-	fcb	$85,$80 ..XX....
-	fcb	$85,$80 ..XX....
-	fcb	$85,$80 ..XX....
-
-digit2	fcb	$8f,$8a XXXXXX..
-	fcb	$80,$8a ....XX..
-	fcb	$8f,$8a XXXXXX..
-	fcb	$8a,$80 XX......
-	fcb	$8f,$8a XXXXXX..
-
-digit3	fcb	$8f,$8a XXXXXX..
-	fcb	$80,$8a ....XX..
-	fcb	$85,$8a ..XXXX..
-	fcb	$80,$8a ....XX..
-	fcb	$8f,$8a XXXXXX..
-
-digit4	fcb	$8a,$8a XX..XX..
-	fcb	$8a,$8a XX..XX..
-	fcb	$8f,$8a XXXXXX..
-	fcb	$80,$8a ....XX..
-	fcb	$80,$8a ....XX..
-
-digit5	fcb	$8f,$8a XXXXXX..
-	fcb	$8a,$80 XX....
-	fcb	$8f,$8a XXXXXX..
-	fcb	$80,$8a ....XX..
-	fcb	$8f,$8a XXXXXX..
-
-digit6	fcb	$8f,$8a XXXXXX..
-	fcb	$8a,$80 XX......
-	fcb	$8f,$8a XXXXXX..
-	fcb	$8a,$8a XX..XX..
-	fcb	$8f,$8a XXXXXX..
-
-digit7	fcb	$8f,$8a XXXXXX..
-	fcb	$80,$8a ....XX..
-	fcb	$80,$8a ....XX..
-	fcb	$80,$8a ....XX..
-	fcb	$80,$8a ....XX..
-
-digit8	fcb	$8f,$8a XXXXXX..
-	fcb	$8a,$8a XX..XX..
-	fcb	$8f,$8a XXXXXX..
-	fcb	$8a,$8a XX..XX..
-	fcb	$8f,$8a XXXXXX..
-
-digit9	fcb	$8f,$8a XXXXXX..
-	fcb	$8a,$8a XX..XX..
-	fcb	$8f,$8a XXXXXX..
-	fcb	$80,$8a ....XX..
-	fcb	$80,$8a ....XX..
-
-* Character Bitmaps
-charLookup
-		fdb	char_cpy,char_A,char_B,char_C
-		fdb	char_D,char_E,char_F,char_G
-		fdb	char_H,char_I,char_J,char_K
-		fdb	char_L,char_M,char_N,char_O
-		fdb	char_P,char_Q,char_R,char_S
-		fdb	char_T,char_U,char_V,char_W
-		fdb	char_X,char_Y,char_Z,char_mns
-		fdb	char_exc,char_qst,char_asp,char_spc
-
-char_cpy	fcb	$85,$8f,$8a	..XXXXXXXX..
-		fcb	$8a,$80,$85	XX........XX
-		fcb	$8a,$8f,$85	XX..XXXX..XX
-		fcb	$8a,$8a,$85	XX..XX....XX
-		fcb	$8a,$8f,$85	XX..XXXX..XX
-		fcb	$8a,$80,$85	XX........XX
-		fcb	$85,$8f,$8a	..XXXXXXXX..
-
-char_A		fcb	$80,$8a,$80	....XX......
-		fcb	$85,$85,$80	..XX..XX....
-		fcb	$8a,$80,$8a	XX......XX..
-		fcb	$8a,$80,$8a	XX......XX..
-		fcb	$8f,$8f,$8a	XXXXXXXXXX..
-		fcb	$8a,$80,$8a	XX......XX..
-		fcb	$8a,$80,$8a	XX......XX..
-
-char_B		fcb	$8f,$8f,$80	XXXXXXXX....
-		fcb	$8a,$80,$8a	XX......XX..
-		fcb	$8a,$80,$8a	XX......XX..
-		fcb	$8f,$8f,$80	XXXXXXXX....
-		fcb	$8a,$80,$8a	XX......XX..
-		fcb	$8a,$80,$8a	XX......XX..
-		fcb	$8f,$8f,$80	XXXXXXXX....
-
-char_C		fcb	$85,$8f,$80	..XXXXXX....
-		fcb	$8a,$80,$8a	XX......XX..
-		fcb	$8a,$80,$80	XX..........
-		fcb	$8a,$80,$80	XX..........
-		fcb	$8a,$80,$80	XX..........
-		fcb	$8a,$80,$8a	XX......XX..
-		fcb	$85,$8f,$80	..XXXXXX....
-
-char_D		fcb	$8f,$8f,$80	XXXXXXXX....
-		fcb	$8a,$80,$8a	XX......XX..
-		fcb	$8a,$80,$8a	XX......XX..
-		fcb	$8a,$80,$8a	XX......XX..
-		fcb	$8a,$80,$8a	XX......XX..
-		fcb	$8a,$80,$8a	XX......XX..
-		fcb	$8f,$8f,$80	XXXXXXXX....
-
-char_E		fcb	$8f,$8f,$8a	XXXXXXXXXX..
-		fcb	$8a,$80,$80	XX..........
-		fcb	$8a,$80,$80	XX..........
-		fcb	$8f,$8a,$80	XXXXXX......
-		fcb	$8a,$80,$80	XX..........
-		fcb	$8a,$80,$80	XX..........
-		fcb	$8f,$8f,$8a	XXXXXXXXXX..
-
-char_F		fcb	$8f,$8f,$8a	XXXXXXXXXX..
-		fcb	$8a,$80,$80	XX..........
-		fcb	$8a,$80,$80	XX..........
-		fcb	$8f,$8a,$80	XXXXXX......
-		fcb	$8a,$80,$80	XX..........
-		fcb	$8a,$80,$80	XX..........
-		fcb	$8a,$80,$80	XX..........
-
-char_G		fcb	$85,$8f,$80	..XXXXXX....
-		fcb	$8a,$80,$8a	XX......XX..
-		fcb	$8a,$80,$80	XX..........
-		fcb	$8a,$85,$8a	XX....XXXX..
-		fcb	$8a,$80,$8a	XX......XX..
-		fcb	$8a,$80,$8a	XX......XX..
-		fcb	$85,$8f,$80	..XXXXXX....
-
-char_H		fcb	$8a,$80,$8a	XX......XX..
-		fcb	$8a,$80,$8a	XX......XX..
-		fcb	$8a,$80,$8a	XX......XX..
-		fcb	$8f,$8f,$8a	XXXXXXXXXX..
-		fcb	$8a,$80,$8a	XX......XX..
-		fcb	$8a,$80,$8a	XX......XX..
-		fcb	$8a,$80,$8a	XX......XX..
-
-char_I		fcb	$85,$8f,$80	..XXXXXX....
-		fcb	$80,$8a,$80	....XX......
-		fcb	$80,$8a,$80	....XX......
-		fcb	$80,$8a,$80	....XX......
-		fcb	$80,$8a,$80	....XX......
-		fcb	$80,$8a,$80	....XX......
-		fcb	$85,$8f,$80	..XXXXXX....
-
-char_J		fcb	$80,$80,$8a	........XX..
-		fcb	$80,$80,$8a	........XX..
-		fcb	$80,$80,$8a	........XX..
-		fcb	$80,$80,$8a	........XX..
-		fcb	$80,$80,$8a	........XX..
-		fcb	$8a,$80,$8a	XX......XX..
-		fcb	$85,$8f,$80	..XXXXXX....
-
-char_K		fcb	$8a,$80,$8a	XX......XX..
-		fcb	$8a,$85,$80	XX....XX....
-		fcb	$8a,$8a,$80	XX..XX......
-		fcb	$8f,$80,$80	XXXX........
-		fcb	$8a,$8a,$80	XX..XX......
-		fcb	$8a,$85,$80	XX....XX....
-		fcb	$8a,$80,$8a	XX......XX..
-
-char_L		fcb	$8a,$80,$80	XX..........
-		fcb	$8a,$80,$80	XX..........
-		fcb	$8a,$80,$80	XX..........
-		fcb	$8a,$80,$80	XX..........
-		fcb	$8a,$80,$80	XX..........
-		fcb	$8a,$80,$80	XX..........
-		fcb	$8f,$8f,$80	XXXXXXXXXX..
-
-char_M		fcb	$8a,$80,$8a	XX......XX..
-		fcb	$8f,$85,$8a	XXXX..XXXX..
-		fcb	$8a,$8a,$8a	XX..XX..XX..
-		fcb	$8a,$8a,$8a	XX..XX..XX..
-		fcb	$8a,$80,$8a	XX......XX..
-		fcb	$8a,$80,$8a	XX......XX..
-		fcb	$8a,$80,$8a	XX......XX..
-
-char_N		fcb	$8a,$80,$8a	XX......XX..
-		fcb	$8a,$80,$8a	XX......XX..
-		fcb	$8f,$80,$8a	XXXX....XX..
-		fcb	$8a,$8a,$8a	XX..XX..XX..
-		fcb	$8a,$85,$8a	XX....XXXX..
-		fcb	$8a,$80,$8a	XX......XX..
-		fcb	$8a,$80,$8a	XX......XX..
-
-char_O		fcb	$85,$8f,$80	..XXXXXX....
-		fcb	$8a,$80,$8a	XX......XX..
-		fcb	$8a,$80,$8a	XX......XX..
-		fcb	$8a,$80,$8a	XX......XX..
-		fcb	$8a,$80,$8a	XX......XX..
-		fcb	$8a,$80,$8a	XX......XX..
-		fcb	$85,$8f,$80	..XXXXXX....
-
-char_P		fcb	$8f,$8f,$80	XXXXXXXX....
-		fcb	$8a,$80,$8a	XX......XX..
-		fcb	$8a,$80,$8a	XX......XX..
-		fcb	$8f,$8f,$80	XXXXXXXX....
-		fcb	$8a,$80,$80	XX..........
-		fcb	$8a,$80,$80	XX..........
-		fcb	$8a,$80,$80	XX..........
-
-char_Q		fcb	$85,$8f,$80	..XXXXXX....
-		fcb	$8a,$80,$8a	XX......XX..
-		fcb	$8a,$80,$8a	XX......XX..
-		fcb	$8a,$80,$8a	XX......XX..
-		fcb	$8a,$8a,$8a	XX..XX..XX..
-		fcb	$8a,$85,$80	XX....XX....
-		fcb	$85,$8a,$8a	..XXXX..XX..
-
-char_R		fcb	$8f,$8f,$80	XXXXXXXX....
-		fcb	$8a,$80,$8a	XX......XX..
-		fcb	$8a,$80,$8a	XX......XX..
-		fcb	$8f,$8f,$80	XXXXXXXX....
-		fcb	$8a,$8a,$80	XX..XX......
-		fcb	$8a,$85,$80	XX....XX....
-		fcb	$8a,$80,$8a	XX......XX..
-
-char_S		fcb	$85,$8f,$80	..XXXXXX....
-		fcb	$8a,$80,$8a	XX......XX..
-		fcb	$8a,$80,$80	xx..........
-		fcb	$85,$8f,$80	..XXXXXX....
-		fcb	$80,$80,$8a	........XX..
-		fcb	$8a,$80,$8a	XX......XX..
-		fcb	$85,$8f,$80	..XXXXXX....
-
-char_T		fcb	$8f,$8f,$8a	XXXXXXXXXX..
-		fcb	$80,$8a,$80	....XX......
-		fcb	$80,$8a,$80	....XX......
-		fcb	$80,$8a,$80	....XX......
-		fcb	$80,$8a,$80	....XX......
-		fcb	$80,$8a,$80	....XX......
-		fcb	$80,$8a,$80	....XX......
-
-char_U		fcb	$8a,$80,$8a	XX......XX..
-		fcb	$8a,$80,$8a	XX......XX..
-		fcb	$8a,$80,$8a	XX......XX..
-		fcb	$8a,$80,$8a	XX......XX..
-		fcb	$8a,$80,$8a	XX......XX..
-		fcb	$8a,$80,$8a	XX......XX..
-		fcb	$85,$8f,$80	..XXXXXX....
-
-char_V		fcb	$8a,$80,$8a	XX......XX..
-		fcb	$8a,$80,$8a	XX......XX..
-		fcb	$8a,$80,$8a	XX......XX..
-		fcb	$85,$85,$80	..XX..XX....
-		fcb	$85,$85,$80	..XX..XX....
-		fcb	$80,$8a,$80	....XX......
-		fcb	$80,$8a,$80	....XX......
-
-char_W		fcb	$8a,$80,$8a	XX......XX..
-		fcb	$8a,$80,$8a	XX......XX..
-		fcb	$8a,$80,$8a	XX......XX..
-		fcb	$8a,$80,$8a	XX......XX..
-		fcb	$8a,$8a,$8a	XX..XX..XX..
-		fcb	$8f,$85,$8a	XXXX..XXXX..
-		fcb	$8a,$80,$8a	XX......XX..
-
-char_X		fcb	$8a,$80,$8a	XX......XX..
-		fcb	$8a,$80,$8a	XX......XX..
-		fcb	$85,$85,$80	..XX..XX....
-		fcb	$80,$8a,$80	....XX......
-		fcb	$85,$85,$80	..XX..XX....
-		fcb	$8a,$80,$8a	XX......XX..
-		fcb	$8a,$80,$8a	XX......XX..
-
-char_Y		fcb	$8a,$80,$8a	XX......XX..
-		fcb	$8a,$80,$8a	XX......XX..
-		fcb	$85,$85,$80	..XX..XX....
-		fcb	$80,$8a,$80	....XX......
-		fcb	$80,$8a,$80	....XX......
-		fcb	$80,$8a,$80	....XX......
-		fcb	$80,$8a,$80	....XX......
-
-char_Z		fcb	$8f,$8f,$8a	XXXXXXXXXX..
-		fcb	$80,$80,$8a	........XX..
-		fcb	$80,$85,$80	......XX....
-		fcb	$80,$8a,$80	....XX......
-		fcb	$85,$80,$80	..XX........
-		fcb	$8a,$80,$80	XX..........
-		fcb	$8f,$8f,$8a	XXXXXXXXXX..
-
-char_mns	fcb	$80,$80,$80	............
-		fcb	$80,$80,$80	............
-		fcb	$80,$80,$80	............
-		fcb	$8f,$8f,$8a	XXXXXXXXXX..
-		fcb	$80,$80,$80	............
-		fcb	$80,$80,$80	............
-		fcb	$80,$80,$80	............
-
-char_exc	fcb	$8a,$80,$80	XX..........
-		fcb	$8a,$80,$80	XX..........
-		fcb	$8a,$80,$80	XX..........
-		fcb	$8a,$80,$80	XX..........
-		fcb	$8a,$80,$80	XX..........
-		fcb	$80,$80,$80	............
-		fcb	$8a,$80,$80	XX..........
-
-
-char_qst	fcb	$85,$8f,$80	..XXXXXX....
-		fcb	$8a,$80,$8a	XX......XX..
-		fcb	$80,$80,$8a	........XX..
-		fcb	$80,$85,$80	......XX....
-		fcb	$80,$8a,$80	....XX......
-		fcb	$80,$80,$80	............
-		fcb	$80,$8a,$80	....XX......
-
-char_asp	fcb	$80,$8a,$80	....XX......
-		fcb	$80,$8a,$80	....XX......
-		fcb	$80,$80,$80	............
-		fcb	$80,$80,$80	............
-		fcb	$80,$80,$80	............
-		fcb	$80,$80,$80	............
-		fcb	$80,$80,$80	............
-
-char_spc	fcb	$80,$80,$80	............
-		fcb	$80,$80,$80	............
-		fcb	$80,$80,$80	............
-		fcb	$80,$80,$80	............
-		fcb	$80,$80,$80	............
-		fcb	$80,$80,$80	............
-		fcb	$80,$80,$80	............
-
-
-
-
-		end start
-	
+		end	start
