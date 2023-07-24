@@ -1,3 +1,5 @@
 *.dsk
 *.bin
 *.log
+.DS_store
+*.bak

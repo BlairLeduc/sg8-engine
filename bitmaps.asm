@@ -1,8 +1,7 @@
 *****************************************************
-* BITMAPS
+* Bitmaps
 
-* Cylinder walls
-cylinderBitmap	
+cylinderBitmap	* 20x35 Bitmap of the cylinder walls
 	fcb	$c5,$cf,$cf,$cf,$cf,$cf,$cf,$cf,$cf,$ca
 	fcb	$c5,$80,$80,$80,$80,$80,$80,$80,$80,$ca
 	fcb	$c5,$80,$80,$80,$80,$80,$80,$80,$80,$ca
@@ -40,8 +39,7 @@ cylinderBitmap
 	fcb	$c5,$80,$80,$80,$80,$80,$80,$80,$80,$ca
 	fcb	$c5,$80,$80,$80,$80,$80,$80,$80,$80,$ca
 
-* Piston
-pistonBitmap	
+pistonBitmap	* 16x24 Bitmap of the piston
 	fcb	$cf,$cf,$cf,$cf,$cf,$cf,$cf,$cf
 	fcb	$cf,$cf,$cf,$cf,$cf,$cf,$cf,$cf
 	fcb	$cf,$cf,$cf,$cf,$cf,$cf,$cf,$cf
@@ -66,8 +64,7 @@ pistonBitmap
 	fcb	$80,$80,$80,$c5,$ca,$80,$80,$80
 	fcb	$80,$80,$80,$c5,$ca,$80,$80,$80
 
-* Ignition in piston
-fireBitmap
+fireBitmap      * 16x8 Ignition in piston
 	fcb	$ff,$ff,$9f,$9f,$9f,$9f,$ff,$ff	
 	fcb	$ff,$ff,$ff,$9f,$9f,$ff,$ff,$ff	
 	fcb	$ff,$ff,$ff,$ff,$ff,$ff,$ff,$ff	
@@ -77,15 +74,13 @@ fireBitmap
 	fcb	$bf,$ff,$ff,$ff,$ff,$ff,$ff,$bf	
 	fcb	$bf,$bf,$ff,$ff,$ff,$ff,$bf,$bf	
 
-* Light bitmap
-lightBitmap
+lightBitmap	* 4x4 Light bitmap 
 	fcb	$a5,$aa
 	fcb	$af,$af
 	fcb	$af,$af
 	fcb	$a5,$aa
 
-* Number bitmaps
-digitLookup
+digitLookup	* Look up for the 4x5 number digits
 	fdb	digit0,digit1,digit2,digit3,digit4
 	fdb	digit5,digit6,digit7,digit8,digit9
 
@@ -149,8 +144,7 @@ digit9	fcb	$8f,$8a XXXXXX..
 	fcb	$80,$8a ....XX..
 	fcb	$80,$8a ....XX..
 
-* Character Bitmaps
-charLookup
+charLookup	* Lookup for the 6x7 characters
 		fdb	char_cpy,char_A,char_B,char_C
 		fdb	char_D,char_E,char_F,char_G
 		fdb	char_H,char_I,char_J,char_K

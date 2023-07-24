@@ -5,9 +5,8 @@
 * TRS-80/Tandy Color Computer.
 
 		pragma	autobranchlength
-
-		nam	/engine/
-		use	bitmaps.asm
+		pragma	6809
+		pragma	6809conv	Adds ASRD, CLRD, COMD, LSLD, LSRD, NEGD, TSTD
 
 ***************************************************************************************
 * Memory map
@@ -56,12 +55,13 @@ drawLocation	rmb	2		Location to start blit'ing (screen)
 drawColour	rmb	1		The color used for drawing text and numbers
 
 		* Joystick values
-joystick	struct
-x		rmb	1
-y		rmb	1
-button		rmb	1
-		endstruct
+joystick	struct			Information about a joystick
+x		rmb	1		The X axis
+y		rmb	1		The Y axis
+button		rmb	1		The state of the button
 
+		endstruct
+		
 leftJoystick	joystick
 rightJoystick	joystick
 
@@ -194,8 +194,7 @@ start
 		sta	fpsLimitCount
 		lda	$0113		Basic timer (should be random the number we get)
 		sta	randomState	for initial seed for pseudo-random number generator
-		clra
-		clrb
+		clrd
 		std	ticks
 		* Clear all pages to black
 		ldd	#$8080		Black in sg8
@@ -204,8 +203,7 @@ loop@		std	,x++
 		cmpx	#page1+2*psize
 		blo	loop@
 		* Initialise game variables
-		clra
-		clrb
+		clrd
 		sta	cycle
 		sta	sound
 		std	clock
@@ -277,15 +275,15 @@ drawJoystickValues@1
 		ldy	#joystickRight
 		bsr	printBcd
 		* Convert left joystick values to BCD
-		lda	rightJoystick.x
+		lda	leftJoystick.x
 		bsr	byteToBcd
 		sta	joystickLeft
-		lda	rightJoystick.y
+		lda	leftJoystick.y
 		bsr	byteToBcd
 		sta	joystickLeft+1
 		* Yellow = button pressed, cyan if not
 		lda	#yellow
-		tst	rightJoystick.button
+		tst	leftJoystick.button
 		bne	drawJoystickValues@2
 		lda	#cyan
 drawJoystickValues@2
@@ -876,4 +874,10 @@ interruptRti
 		lda	$ff02		Reset irq trigger
 		rti
 
+***************************************************************************************
+* Bitmaps
+*
+		include	bitmaps.asm
+		
+***************************************************************************************
 		end	start
